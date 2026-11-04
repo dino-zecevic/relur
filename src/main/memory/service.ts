@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import os from 'node:os';
 import { MEMORY_INTERVAL_MS, type MemorySnapshot, type SessionMemory } from '@shared/memory';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import { appMemory, measureSession, processTree } from './measure';
@@ -14,6 +15,8 @@ export interface MemoryMonitorOptions {
   appProcesses: () => { pid: number; fallbackBytes: number }[];
   /** Whether a window is shown and not minimized (spec §6.14). */
   visible: () => boolean;
+  /** The machine's total RAM; os.totalmem() by default. */
+  totalMemory?: () => number;
   intervalMs?: number;
 }
 
@@ -95,6 +98,7 @@ export class MemoryMonitor {
       at: Date.now(),
       sessions,
       app: appMemory(tree, this.options.appProcesses()),
+      total: this.options.totalMemory?.() ?? os.totalmem(),
     };
     this.events.emit('change');
   }

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  describeGroup,
+  describeSplit,
   formatBytes,
+  formatTotal,
   type MemorySnapshot,
   memoryGroups,
-  memoryTooltip,
+  memoryShare,
+  memoryUsed,
   projectMemory,
   type SessionMemory,
   sessionsTotal,
@@ -51,6 +53,7 @@ const session = (
 const SNAPSHOT: MemorySnapshot = {
   at: 0,
   app: 700 * MB,
+  total: 16 * GB,
   sessions: [
     session('a', 'w1', 'ABC-142', 300, [['node dev server', 1200]]),
     // A workspace with two sessions: summed, labels merged.
@@ -88,34 +91,35 @@ describe('sums', () => {
   });
 });
 
-describe('tooltip text', () => {
-  it('describes a workspace with Claude and what it started', () => {
-    expect(describeGroup(memoryGroups(SNAPSHOT.sessions)[0] as never)).toBe(
-      'ABC-142  1.5 GB (Claude 300 MB, other 1.2 GB: node dev server)',
+describe('describeSplit', () => {
+  it('splits a workspace into Claude and what it started', () => {
+    expect(describeSplit(memoryGroups(SNAPSHOT.sessions)[0] as never)).toBe(
+      'Claude 300 MB, other 1.2 GB: node dev server',
     );
   });
+});
 
-  it('lists the five largest and the app', () => {
-    const many: MemorySnapshot = {
-      at: 0,
-      app: 700 * MB,
-      sessions: [1, 2, 3, 4, 5, 6, 7].map((n) => session(`s${n}`, `w${n}`, `T-${n}`, n * 100)),
-    };
-    expect(memoryTooltip(many)).toBe(
-      [
-        'Claude sessions and what they started: 2.7 GB',
-        'T-7  700 MB (Claude 700 MB, other 0 MB)',
-        'T-6  600 MB (Claude 600 MB, other 0 MB)',
-        'T-5  500 MB (Claude 500 MB, other 0 MB)',
-        'T-4  400 MB (Claude 400 MB, other 0 MB)',
-        'T-3  300 MB (Claude 300 MB, other 0 MB)',
-        'and 2 more',
-        '',
-        'This app: 700 MB',
-      ].join('\n'),
-    );
-    expect(memoryTooltip({ at: 0, app: 500 * MB, sessions: [] })).toBe(
-      'No Claude session is running.\n\nThis app: 500 MB',
-    );
+describe("the status bar's bar", () => {
+  const at = (app: number, total: number): MemorySnapshot => ({ ...SNAPSHOT, app, total });
+
+  it("fills with the sessions and the app, relative to the machine's RAM", () => {
+    // 2336 MB of sessions and 736 MB of the app: 3 GB of 16 GB.
+    const snapshot = at(736 * MB, 16 * GB);
+    expect(memoryUsed(snapshot)).toBe(3 * GB);
+    expect(memoryShare(snapshot)).toBeCloseTo(3 / 16);
+    expect(memoryShare({ ...snapshot, sessions: [] })).toBeCloseTo(736 / (16 * 1024));
+  });
+
+  it('stays between empty and full', () => {
+    expect(memoryShare(at(0, 2 * GB))).toBe(1);
+    expect(memoryShare(at(0, 0))).toBe(0);
+    expect(memoryShare({ at: 0, app: 0, total: 8 * GB, sessions: [] })).toBe(0);
+  });
+
+  it("shows the machine's RAM in whole gigabytes", () => {
+    expect(formatTotal(16 * GB)).toBe('16 GB');
+    expect(formatTotal(15.6 * GB)).toBe('16 GB');
+    expect(formatTotal(7.8 * GB)).toBe('8 GB');
+    expect(formatTotal(512 * MB)).toBe('512 MB');
   });
 });

@@ -32,6 +32,8 @@ export interface MemorySnapshot {
   sessions: SessionMemory[];
   /** The app's own processes: Electron, its renderers and helpers. */
   app: number;
+  /** The machine's total RAM, what the status bar's bar is relative to. */
+  total: number;
 }
 
 /** A workspace's sessions together, or one main-checkout session. */
@@ -122,20 +124,20 @@ export function describeSplit(g: Pick<MemoryGroup, 'claude' | 'other' | 'otherPa
   return `Claude ${formatBytes(g.claude)}, other ${formatBytes(g.other)}${names}`;
 }
 
-/** "ABC-142  1.5 GB (Claude 300 MB, other 1.2 GB: node dev server)". */
-export const describeGroup = (g: MemoryGroup): string =>
-  `${g.label}  ${formatBytes(g.total)} (${describeSplit(g)})`;
-
-/** The status bar's tooltip (spec §6.14): the five largest, then the app's own memory. */
-export function memoryTooltip(snapshot: MemorySnapshot): string {
-  const groups = memoryGroups(snapshot.sessions);
-  const lines =
-    groups.length === 0
-      ? ['No Claude session is running.']
-      : [
-          `Claude sessions and what they started: ${formatBytes(sessionsTotal(snapshot))}`,
-          ...groups.slice(0, 5).map(describeGroup),
-          ...(groups.length > 5 ? [`and ${groups.length - 5} more`] : []),
-        ];
-  return [...lines, '', `This app: ${formatBytes(snapshot.app)}`].join('\n');
+/** The machine's RAM, in whole gigabytes: "16 GB" (spec §6.14). */
+export function formatTotal(bytes: number): string {
+  return bytes >= GB ? `${Math.round(bytes / GB)} GB` : formatBytes(bytes);
 }
+
+/** What the status bar counts: every running session and the app itself (spec §6.14). */
+export const memoryUsed = (snapshot: MemorySnapshot): number =>
+  sessionsTotal(snapshot) + snapshot.app;
+
+/** How full the status bar's bar is: the used memory relative to the machine's RAM, 0–1. */
+export function memoryShare(snapshot: MemorySnapshot): number {
+  if (!(snapshot.total > 0)) return 0;
+  return Math.min(1, Math.max(0, memoryUsed(snapshot) / snapshot.total));
+}
+
+/** At this share the bar turns `st-permission`, as plan usage does at 80 %. */
+export const MEMORY_HIGH_SHARE = 0.8;

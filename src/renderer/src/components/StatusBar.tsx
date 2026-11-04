@@ -1,4 +1,4 @@
-import { formatBytes, type MemorySnapshot, memoryTooltip, sessionsTotal } from '@shared/memory';
+import type { MemorySnapshot } from '@shared/memory';
 import type { Profile } from '@shared/schemas';
 import { needsYou } from '@shared/status';
 import type { UsageSnapshot } from '@shared/usage';
@@ -8,6 +8,7 @@ import { GuideLink } from '../guide/link';
 import { useTRPC } from '../trpc';
 import { ProfileDot } from '../ui/profile-color';
 import { StatusGlyph } from '../ui/StatusGlyph';
+import { MemoryStatus } from './MemoryStatus';
 import { UsageMeter } from './UsageMeter';
 
 const triangle = (
@@ -115,18 +116,7 @@ export function StatusBar({
             {waiting} needs you
           </span>
         ) : null}
-        {memory ? (
-          <span
-            data-memory
-            title={memoryTooltip(memory)}
-            className="flex items-center gap-1.5 whitespace-nowrap"
-          >
-            <span className="text-fg-muted">Memory</span>
-            <span className="font-mono text-xs">
-              {memory.sessions.length > 0 ? formatBytes(sessionsTotal(memory)) : '—'}
-            </span>
-          </span>
-        ) : null}
+        {memory ? <MemoryStatus memory={memory} /> : null}
         {profile && usage.show ? (
           <>
             <UsageMeter usage={usage.snapshot} />

@@ -15,6 +15,30 @@ function until(at: number, now: number): string {
 const clock = (at: number) =>
   new Date(at).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
+/** The status bar's 44×4 bar (components.md, Plan usage), shared with Memory. */
+export function MeterBar({
+  percent,
+  high,
+  stale = false,
+}: {
+  percent: number;
+  /** `st-permission` instead of `fg-muted`. */
+  high: boolean;
+  stale?: boolean;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={`relative h-1 w-11 shrink-0 overflow-hidden rounded-full bg-line ${stale ? 'opacity-60' : ''}`}
+    >
+      <span
+        className={`absolute inset-y-0 left-0 rounded-full ${high ? 'bg-st-permission' : 'bg-fg-muted'} ${stale ? 'bg-[repeating-linear-gradient(45deg,currentColor_0_2px,transparent_2px_4px)]' : ''}`}
+        style={{ width: `${percent}%` }}
+      />
+    </span>
+  );
+}
+
 function Meter({
   label,
   window,
@@ -36,15 +60,7 @@ function Meter({
       title={window?.resetsAt ? `Resets ${clock(window.resetsAt)}` : undefined}
     >
       <span className="text-fg-muted">{label}</span>
-      <span
-        aria-hidden
-        className={`relative h-1 w-11 overflow-hidden rounded-full bg-line ${stale ? 'opacity-60' : ''}`}
-      >
-        <span
-          className={`absolute inset-y-0 left-0 rounded-full ${high ? 'bg-st-permission' : 'bg-fg-muted'} ${stale ? 'bg-[repeating-linear-gradient(45deg,currentColor_0_2px,transparent_2px_4px)]' : ''}`}
-          style={{ width: `${used ?? 0}%` }}
-        />
-      </span>
+      <MeterBar percent={used ?? 0} high={high} stale={stale} />
       <span className={`font-mono text-xs ${high && !stale ? 'text-st-permission' : ''}`}>
         {used === null ? '—' : `${used}%`}
       </span>

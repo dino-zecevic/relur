@@ -16,6 +16,7 @@ import './lib/clean-env';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { appConfigDir } from '../src/main/paths';
 import { createFixture } from '../src/main/test-support/git-fixtures';
@@ -1214,16 +1215,96 @@ exec sleep 600
       await page.eval<string>(`document.querySelector('[data-detail=Memory] dd').textContent`),
       new RegExp(`^${size} · \\d+ sessions?$`),
     );
-    const memoryTotal = `document.querySelector('footer [data-memory]')`;
+    // The status bar (spec §6.14): a bar filled by the sessions and the app
+    // relative to the machine's RAM, then "2.4 GB of 16 GB".
+    const memoryButton = `document.querySelector('footer [data-memory]')`;
+    const totalRam = `${Math.round(os.totalmem() / 1024 ** 3)} GB`;
     assert.match(
-      await page.eval<string>(`${memoryTotal}.innerText.replace(/\\s+/g, ' ')`),
-      new RegExp(`^Memory ${size}$`),
+      await page.eval<string>(`${memoryButton}.innerText.replace(/\\s+/g, ' ')`),
+      new RegExp(`^Memory ${size} of ${totalRam}$`),
     );
+    const fill = await page.eval<string>(
+      `${memoryButton}.querySelector('[aria-hidden] > span').style.width`,
+    );
+    assert.ok(Number.parseFloat(fill) > 0 && Number.parseFloat(fill) <= 100, `bar at ${fill}`);
+    // A click opens the panel, not a native tooltip; it takes focus.
+    const memoryPanel = `document.querySelector('[data-memory-panel]')`;
+    assert.equal(await page.eval(`${memoryButton}.title`), '');
+    await page.eval(`${memoryButton}.click()`);
+    await page.waitFor(
+      `!!${memoryPanel} && document.activeElement === ${memoryPanel}`,
+      'the memory panel in focus',
+    );
+    assert.equal(await page.eval(`${memoryButton}.getAttribute('aria-expanded')`), 'true');
+    const memoryText = await page.eval<string>(`${memoryPanel}.innerText`);
+    assert.match(memoryText, new RegExp(`^Memory\\n${size} of ${totalRam}\\n`));
+    assert.match(memoryText, new RegExp(`Claude sessions\\n${size}\\nThis app\\n${size}`));
     assert.match(
-      await page.eval<string>(`${memoryTotal}.title`),
-      new RegExp(
-        `^Claude sessions and what they started: ${size}\\n.+  ${size} \\(Claude [^]*\\n\\nThis app: ${size}$`,
-      ),
+      memoryText,
+      new RegExp(`Largest workspaces\\n.+\\n${size}\\nClaude ${size}, other ${size}`),
+    );
+    for (const term of ['Claude', 'Other', 'This app', 'Not counted']) {
+      assert.ok(
+        await page.eval(
+          `[...${memoryPanel}.querySelectorAll('[data-memory-terms] dt')].some((t) => t.textContent === ${JSON.stringify(term)})`,
+        ),
+        `the panel explains ${term}`,
+      );
+    }
+    assert.match(memoryText, /shells you open in terminal tabs, and processes that detach/);
+    await screenshot(page, screenshotDir, '5c-memory-panel.png');
+    // Esc closes it and puts focus back on the button.
+    await pressKey(page, 'Escape');
+    await page.waitFor(
+      `!${memoryPanel} && document.activeElement === ${memoryButton}`,
+      'Esc to close the panel',
+    );
+    // Keyboard: ↵ on the focused button opens it; a click outside closes it.
+    await pressEnter(page);
+    await page.waitFor(`!!${memoryPanel}`, 'the panel from the keyboard');
+    const outsideAt = await page.eval<{ x: number; y: number }>(`(() => {
+      const r = document.querySelector('[data-detail=Path]').getBoundingClientRect();
+      return { x: r.x + 4, y: r.y + 4 };
+    })()`);
+    for (const type of ['mousePressed', 'mouseReleased'] as const) {
+      await page.send('Input.dispatchMouseEvent', {
+        type,
+        ...outsideAt,
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+      });
+    }
+    await page.waitFor(`!${memoryPanel}`, 'a click outside to close the panel');
+    assert.equal(await page.eval(`${memoryButton}.getAttribute('aria-expanded')`), 'false');
+    // Learn more opens the Guide's Memory page; ⌘[ comes back.
+    const guideArticle = `document.querySelector('[data-guide-article]')?.dataset.guideArticle`;
+    const toMemoryGuide = async (link: string, what: string) => {
+      await page.eval(`${link}.click()`);
+      await page.waitFor(`(${guideArticle}) === 'memory'`, `${what} to the Memory page`);
+      assert.match(
+        await page.eval<string>(`document.querySelector('[data-guide-article]').innerText`),
+        /higher than Activity Monitor/,
+      );
+      await pressKey(page, 'BracketLeft', CMD);
+      await page.waitFor(
+        `!document.querySelector('[data-guide]') && !!document.querySelector('[data-sort-memory]')`,
+        `back from the Guide (${what})`,
+      );
+    };
+    await page.eval(`${memoryButton}.click()`);
+    await page.waitFor(`!!${memoryPanel}`, 'the panel again');
+    await toMemoryGuide(`${memoryPanel}.querySelector('[data-guide-to="memory"]')`, 'Learn more');
+    assert.equal(await page.eval(`!!${memoryPanel}`), false, 'Learn more closes the panel');
+    // The "?" after the column's header and after the project's Memory.
+    await toMemoryGuide(
+      `document.querySelector('[data-sort-memory]').closest('th').querySelector('[data-guide-to="memory"]')`,
+      'the column\'s "?"',
+    );
+    await page.waitFor(`!!document.querySelector('[data-detail=Memory]')`, "the project's Memory");
+    await toMemoryGuide(
+      `document.querySelector('[data-detail=Memory] [data-guide-to="memory"]')`,
+      'the project\'s "?"',
     );
     // Not in the sidebar's rows.
     assert.equal(

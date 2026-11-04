@@ -32,6 +32,7 @@ function monitor(visible: () => boolean) {
     readProcesses,
     appProcesses: () => [{ pid: 10, fallbackBytes: 0 }],
     visible,
+    totalMemory: () => 16 * 1024 * MB,
     intervalMs: 10_000,
   });
   return { m, readProcesses, endSessions: () => (sessions = []) };
@@ -65,6 +66,7 @@ describe('MemoryMonitor', () => {
     await m.refresh();
     expect(m.current()).toMatchObject({
       app: 100 * MB,
+      total: 16 * 1024 * MB,
       sessions: [
         {
           sessionId: 's1',

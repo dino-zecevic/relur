@@ -208,6 +208,9 @@ export function ProjectView({
                 {label === 'Worktrees' ? (
                   <GuideLink to="worktrees#a-folder-you-choose" label="Where worktrees go" />
                 ) : null}
+                {label === 'Memory' ? (
+                  <GuideLink to="memory" label="What the memory counts" />
+                ) : null}
               </dt>
               {label === 'Remote' && choosingRemote ? (
                 <dd className="mt-0.5">
@@ -468,7 +471,7 @@ function WorkspaceTable({
           <th className={`${cell} font-normal`}>Title</th>
           <th className={`${cell} w-[30%] font-normal`}>Branch</th>
           <th
-            className={`${cell} w-24 text-right font-normal`}
+            className={`${cell} w-28 text-right font-normal`}
             aria-sort={sort === 'none' ? undefined : sort}
           >
             <button
@@ -483,6 +486,9 @@ function WorkspaceTable({
                 {sort === 'descending' ? '↓' : sort === 'ascending' ? '↑' : ''}
               </span>
             </button>
+            <span className="ml-1 inline-flex align-middle">
+              <GuideLink to="memory" label="What the memory counts" />
+            </span>
           </th>
           <th className={`${cell} w-16 text-right font-normal`}>Active</th>
         </tr>
