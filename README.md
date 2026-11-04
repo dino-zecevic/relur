@@ -6,9 +6,9 @@
 
 **Run many Claude Code sessions side by side, each in its own worktree,<br>and know exactly when one needs you.**
 
-[**Download**](https://github.com/dino-zecevic/relur/releases/latest) · [Install](#install) · [Quick start](#quick-start) · [FAQ](#faq)
+[**Download**](https://github.com/relur-dev/relur/releases/latest) · [Install](#install) · [Quick start](#quick-start) · [FAQ](#faq)
 
-[![Latest release](https://img.shields.io/github/v/release/dino-zecevic/relur?label=release)](https://github.com/dino-zecevic/relur/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/relur-dev/relur?label=release)](https://github.com/relur-dev/relur/releases/latest)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-lightgrey)
 
@@ -29,7 +29,7 @@ Claude Code is great at one task at a time. Run three, and you're juggling termi
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dino-zecevic/relur/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/relur-dev/relur/main/install.sh | sh
 ```
 
 One command for macOS and Linux: it picks your platform and chip, checks the download against the release's checksums, and never uses sudo.
@@ -38,8 +38,8 @@ Or download the app directly:
 
 | Platform | Download |
 |---|---|
-| **macOS** 13 or later | [Apple Silicon](https://github.com/dino-zecevic/relur/releases/latest/download/Relur-mac-arm64.dmg) · [Intel](https://github.com/dino-zecevic/relur/releases/latest/download/Relur-mac-x64.dmg) |
-| **Linux** x64 and arm64 | `.deb` [x64](https://github.com/dino-zecevic/relur/releases/latest/download/Relur-linux-x64.deb) · [arm64](https://github.com/dino-zecevic/relur/releases/latest/download/Relur-linux-arm64.deb) · AppImage [x64](https://github.com/dino-zecevic/relur/releases/latest/download/Relur-linux-x64.AppImage) · [arm64](https://github.com/dino-zecevic/relur/releases/latest/download/Relur-linux-arm64.AppImage) |
+| **macOS** 13 or later | [Apple Silicon](https://github.com/relur-dev/relur/releases/latest/download/Relur-mac-arm64.dmg) · [Intel](https://github.com/relur-dev/relur/releases/latest/download/Relur-mac-x64.dmg) |
+| **Linux** x64 and arm64 | `.deb` [x64](https://github.com/relur-dev/relur/releases/latest/download/Relur-linux-x64.deb) · [arm64](https://github.com/relur-dev/relur/releases/latest/download/Relur-linux-arm64.deb) · AppImage [x64](https://github.com/relur-dev/relur/releases/latest/download/Relur-linux-x64.AppImage) · [arm64](https://github.com/relur-dev/relur/releases/latest/download/Relur-linux-arm64.AppImage) |
 
 You also need [Claude Code](https://code.claude.com) (Relur offers to install it), a Claude plan and git.
 

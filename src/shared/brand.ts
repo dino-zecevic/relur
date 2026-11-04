@@ -5,15 +5,19 @@
 const displayName = 'Relur';
 const slug = 'relur';
 /** The GitHub repository releases are published from (install.sh, the release workflow). */
-const github = { owner: 'dino-zecevic', repo: slug } as const;
+const github = { owner: 'relur-dev', repo: slug } as const;
 
 export const BRAND = {
   /** Shown in window titles, menus and notifications. */
   displayName,
   /** Lowercase, filesystem- and shell-safe form of the name. */
   slug,
-  /** macOS bundle ID and Windows AppUserModelID. */
-  bundleId: `io.github.${github.owner}.${slug}`,
+  /**
+   * macOS bundle ID and Windows AppUserModelID. Fixed: it was made from the
+   * repository's first owner, and changing it makes macOS treat the app as new
+   * (it asks again for notifications), so it stays when the repository moves.
+   */
+  bundleId: `io.github.dino-zecevic.${slug}`,
   github,
   /** Prefix of every environment variable the app sets, e.g. `<prefix>WORKSPACE_ID`. */
   envPrefix: `${slug.toUpperCase()}_`,

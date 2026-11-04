@@ -71,9 +71,9 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/dino-zecevic/relur/compare/v0.3.2...HEAD
-[0.3.2]: https://github.com/dino-zecevic/relur/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/dino-zecevic/relur/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/dino-zecevic/relur/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/dino-zecevic/relur/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/dino-zecevic/relur/releases/tag/v0.1.0
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/relur-dev/relur/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/relur-dev/relur/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/relur-dev/relur/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/relur-dev/relur/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/relur-dev/relur/releases/tag/v0.1.0

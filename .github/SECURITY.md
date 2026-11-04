@@ -8,7 +8,7 @@ Security fixes go into the latest release. Please update to it before reporting.
 
 Please **don't open a public issue** for a security problem. Report it privately through GitHub's private vulnerability reporting:
 
-1. Open the repository's [Security tab](https://github.com/dino-zecevic/relur/security).
+1. Open the repository's [Security tab](https://github.com/relur-dev/relur/security).
 2. Click **Report a vulnerability**.
 3. Describe the problem, the version and platform, and the steps to reproduce it, with a proof of concept if you have one.
 

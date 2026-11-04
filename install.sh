@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs, updates or removes Relur on a Mac or on Linux.
 #
-#   curl -fsSL https://raw.githubusercontent.com/dino-zecevic/relur/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/relur-dev/relur/main/install.sh | sh
 #   sh install.sh --uninstall        removes the app and the launcher, keeps your settings
 #   sh install.sh --from <file|dir>  installs a local build instead (npm run install-app)
 #   sh install.sh --yes              quits a running Relur without asking, and doesn't offer to open it
@@ -21,7 +21,7 @@ set -eu
 APP='Relur'
 HELPER='relur-helper'
 LINUX_EXE='relur-desktop'
-BASE_URL="${RELUR_INSTALL_BASE_URL:-https://github.com/dino-zecevic/relur/releases/latest/download}"
+BASE_URL="${RELUR_INSTALL_BASE_URL:-https://github.com/relur-dev/relur/releases/latest/download}"
 LAUNCHER="$HOME/.local/bin/relur"
 MARK="# $APP command line tool"
 OLD_APP='Orrery'

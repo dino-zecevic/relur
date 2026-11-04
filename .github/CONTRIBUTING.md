@@ -7,7 +7,7 @@ Thanks for your interest. Issues and pull requests are welcome: bug reports, fix
 You need macOS or Linux, Node.js 22 and git. On Linux also a C++ compiler, make and Python 3 (`sudo apt install build-essential python3`), which node-pty needs.
 
 ```sh
-git clone https://github.com/dino-zecevic/relur.git
+git clone https://github.com/relur-dev/relur.git
 cd relur
 npm ci
 npm run dev
