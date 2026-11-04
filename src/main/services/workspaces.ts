@@ -30,6 +30,7 @@ import type { EnvService } from '../env/service';
 import { type Git, gitReason } from '../git/git';
 import { expandHome } from '../paths';
 import { copyIncludedFiles } from '../worktrees/include';
+import { RemoteAnswers } from '../worktrees/remote-answers';
 import {
   allocatePorts,
   type CommandResult,
@@ -57,7 +58,11 @@ export interface CreateWorkspaceInput {
 }
 
 /** A repository's remote branches, why the remote couldn't be asked, or null without one. */
-type RemoteHeads = { heads: Set<string> } | { error: string } | null;
+/**
+ * What a remote answered (spec §7.3): its branches and whether the base was
+ * fetched (null, or why not), or why it couldn't be asked; null without a remote.
+ */
+type RemoteHeads = { heads: Set<string>; fetchError?: string | null } | { error: string } | null;
 
 /** How deleting treats one repository's worktree and branch (spec §14.2). */
 export interface RepoDeleteChoice {
@@ -173,6 +178,9 @@ export class WorkspaceService {
 
   /** What happens once every running setup of a workspace has finished (spec §21.3). */
   private readonly afterSetup = new Map<string, { start: boolean; restart: boolean }>();
+
+  /** Each remote's branches and fetched base, asked once for New workspace and Create (spec §7.3). */
+  private readonly remoteAnswers = new RemoteAnswers();
 
   /** Where Create's phases are timed (spec §3.4); set by the app. */
   log: AppLog | null = null;
@@ -291,13 +299,12 @@ export class WorkspaceService {
       throw new Error('Enter a branch name');
     }
     const projects = [project, ...linkedIds.map((id) => this.linkable(project, id))];
-    // Spec §7.3: each remote is asked once, for the branch and the base.
+    // Spec §7.3: each remote is asked once, for the branch and the base, while
+    // its base is fetched; New workspace may have asked already.
     const remoteTargets = await Promise.all(
-      projects.map(async (p) => ({
+      projects.map(async (p, i) => ({
         project: p,
-        remote: p.remote
-          ? await timer.time(`git ls-remote ${p.remote} (${p.name})`, () => this.askRemote(git, p))
-          : null,
+        remote: await this.askRemote(git, p, i === 0 ? base : this.projectBase(profile, p), timer),
       })),
     );
     const notes: string[] = [];
@@ -569,14 +576,70 @@ export class WorkspaceService {
     return this.workspace(workspace.id);
   }
 
-  /** The remote's branches (network), or why it couldn't be asked; null without a remote. */
-  private async askRemote(git: Git, project: Project): Promise<RemoteHeads> {
-    if (!project.remote) return null;
-    try {
-      return { heads: await git.remoteHeads(expandHome(project.repoPath), project.remote) };
-    } catch (error) {
-      return { error: gitReason(error) };
+  /**
+   * Asks each remote of New workspace's projects for its branches and fetches
+   * its base (spec §7.3), without waiting: Create reuses the answers.
+   */
+  async prepareRemotes(
+    projectId: string,
+    linkedProjectIds: string[],
+    baseBranch: string,
+  ): Promise<void> {
+    const { project, profile, git } = await this.context(projectId);
+    const linked = linkedProjectIds.filter((id) => id !== project.id);
+    const projects = [project, ...linked.map((id) => this.linkable(project, id))];
+    for (const [i, p] of projects.entries()) {
+      const base = i === 0 ? baseBranch.trim() : this.projectBase(profile, p);
+      if (base) void this.askRemote(git, p, base, null);
     }
+  }
+
+  /**
+   * The remote's branches, with `git fetch <remote> <base>` run at the same
+   * time (network, spec §7.3), or why it couldn't be asked; null without a
+   * remote. Each answer is reused while it runs and for 30 s after; Create
+   * (with a timer) uses it up, New workspace (without) only starts it.
+   */
+  private async askRemote(
+    git: Git,
+    project: Project,
+    base: string,
+    timer: PhaseTimer | null,
+  ): Promise<RemoteHeads> {
+    const remote = project.remote;
+    if (!remote) return null;
+    const repo = expandHome(project.repoPath);
+    const heads = this.remoteAnswers.get(
+      `ls-remote\0${repo}\0${remote}`,
+      () =>
+        git.remoteHeads(repo, remote).then(
+          (h): RemoteHeads => ({ heads: h }),
+          (error): RemoteHeads => ({ error: gitReason(error) }),
+        ),
+      { take: timer !== null },
+    );
+    // A base the remote doesn't have fails here; the heads say so.
+    const fetched = this.remoteAnswers.get(
+      `fetch\0${repo}\0${remote}\0${base}`,
+      () =>
+        git.fetch(repo, remote, base).then(
+          () => null,
+          (error) => gitReason(error),
+        ),
+      { take: timer !== null },
+    );
+    const wait = <T>(phase: string, asked: { answer: Promise<T>; reused: boolean }) =>
+      timer
+        ? timer.time(
+            `${phase} (${project.name})${asked.reused ? ', asked earlier' : ''}`,
+            () => asked.answer,
+          )
+        : asked.answer;
+    const [answer, fetchError] = await Promise.all([
+      wait(`git ls-remote ${remote}`, heads),
+      wait(`git fetch ${remote} ${base}`, fetched),
+    ]);
+    return answer && 'heads' in answer ? { heads: answer.heads, fetchError } : answer;
   }
 
   /**
@@ -610,9 +673,9 @@ export class WorkspaceService {
   }
 
   /**
-   * One repository's worktree for a workspace (spec §7.3 steps 1–4): fetches
-   * the base, adds the worktree with its branch, copies the .worktreeinclude
-   * files and writes the task file. A base that isn't on the remote yet, or a
+   * One repository's worktree for a workspace (spec §7.3 steps 1–4), its base
+   * fetched with the remote's answer: adds the worktree with its branch, copies
+   * the .worktreeinclude files and writes the task file. A base that isn't on the remote yet, or a
    * fetch that fails, starts from the local base branch: the note says so.
    */
   private async addRepoWorktree(
@@ -638,12 +701,8 @@ export class WorkspaceService {
         );
       }
       if ('heads' in remoteHeads && remoteHeads.heads.has(base)) {
-        try {
-          await timer.time(`git fetch ${remote} ${base}${of}`, () => git.fetch(repo, remote, base));
-          startPoint = `${remote}/${base}`;
-        } catch (error) {
-          reason = gitReason(error);
-        }
+        if (remoteHeads.fetchError) reason = remoteHeads.fetchError;
+        else startPoint = `${remote}/${base}`;
       }
       if (startPoint === base) {
         if (!(await timer.time(`local ${base}${of}`, () => git.localBranchExists(repo, base)))) {
@@ -1031,9 +1090,7 @@ export class WorkspaceService {
       const note = await this.addRepoWorktree(
         git,
         project,
-        project.remote
-          ? await timer.time(`git ls-remote ${project.remote}`, () => this.askRemote(git, project))
-          : null,
+        await this.askRemote(git, project, base, timer),
         worktreePath,
         branch,
         base,

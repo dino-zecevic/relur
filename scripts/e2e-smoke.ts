@@ -3254,6 +3254,9 @@ exec sleep 600
     for (const line of [
       /Z lookup FAKE-1 \(\S+\): command \d+ ms$/m,
       /Z lookup FAKE-1 \(\S+\): found$/m,
+      // The dialog asked the remote while it was open (spec §7.3).
+      /Z create FAKE-1-fix-the-fake-login in \S+: git ls-remote origin \(shop\), asked earlier \d+ ms$/m,
+      /Z create FAKE-1-fix-the-fake-login in \S+: git fetch origin main \(shop\), asked earlier \d+ ms$/m,
       /Z create FAKE-1-fix-the-fake-login in \S+: git worktree add (\(\S+\) )?\d+ ms$/m,
       /Z create FAKE-1-fix-the-fake-login in \S+: Copying the \.worktreeinclude files (\(\S+\) )?\d+ ms$/m,
       /Z create FAKE-1-fix-the-fake-login in \S+: Create done \d+ ms$/m,

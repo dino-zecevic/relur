@@ -109,4 +109,17 @@ describe('Git', () => {
     fx.git(repo, 'commit', '-q', '--allow-empty', '-m', 'one');
     expect(await git.unpushedCount(repo, 'task', false)).toBe(1);
   });
+
+  it('stops a network call after its timeout, with the ssh it started (spec §7.3)', async () => {
+    // A git that starts a child holding its output open, as ssh does.
+    const slow = path.join(fx.root, 'slow-git');
+    fs.writeFileSync(slow, '#!/bin/sh\nsleep 30 &\nsleep 30\n', { mode: 0o755 });
+    const started = Date.now();
+    const error = await new Git({ gitPath: slow, env: fx.env })
+      .run(fx.root, ['fetch'], { timeoutSec: 1 })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GitError);
+    expect(gitReason(error)).toBe('timed out after 1 s');
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
 });

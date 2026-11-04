@@ -83,6 +83,20 @@ export function NewWorkspaceDialog({
   // The branch asked for: typed, else from the task.
   const wanted = branchEdit ?? derived;
   const base = baseEdit ?? project?.baseBranch ?? profile.defaults.baseBranch;
+  // Spec §7.3: each remote is asked, and its base fetched, as the dialog opens
+  // (again for another project, base or Also in), so Create can reuse it.
+  const prepareRemotes = useMutation(trpc.workspaces.prepareRemotes.mutationOptions());
+  const preparedBase = useDebounced(base.trim(), 500);
+  const preparedLinks = linkedProjectIds.join('\n');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per project, links and base
+  useEffect(() => {
+    if (!project || !preparedBase) return;
+    prepareRemotes.mutate({
+      projectId: project.id,
+      linkedProjectIds: preparedLinks ? preparedLinks.split('\n') : [],
+      baseBranch: preparedBase,
+    });
+  }, [project?.id, preparedLinks, preparedBase]);
 
   const checkedBranch = useDebounced(wanted.trim(), 250);
   const check = useQuery(

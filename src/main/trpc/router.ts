@@ -785,6 +785,17 @@ export function createAppRouter({
       baseBranches: publicProcedure
         .input(projectId)
         .query(({ input }) => workspaces.baseBranches(input.projectId)),
+      /** New workspace asks the remotes early, for Create to reuse (spec §7.3). */
+      prepareRemotes: publicProcedure
+        .input(
+          projectId.extend({
+            linkedProjectIds: z.array(IdSchema).max(50),
+            baseBranch: z.string().max(250),
+          }),
+        )
+        .mutation(({ input }) =>
+          workspaces.prepareRemotes(input.projectId, input.linkedProjectIds, input.baseBranch),
+        ),
       create: publicProcedure
         .input(
           projectId.extend({

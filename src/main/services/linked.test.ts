@@ -8,6 +8,7 @@ import { ConfigStore } from '../config/store';
 import { openStateDb } from '../db/state-db';
 import { WorkspaceRecords } from '../db/workspaces';
 import { EnvService } from '../env/service';
+import { Git } from '../git/git';
 import { SessionHost } from '../sessions/host';
 import { createFixture, type Fixture } from '../test-support/git-fixtures';
 import { type CliLinkEvent, CliLinkService } from './cli-link';
@@ -610,6 +611,29 @@ exec sleep 30
       );
       expect(fs.existsSync(path.join(fx.root, 'wt', 'fresh', 'nowhere'))).toBe(false);
     });
+  });
+
+  it('asks each remote once for New workspace and Create, fetching the base meanwhile', async () => {
+    const heads = vi.spyOn(Git.prototype, 'remoteHeads');
+    const fetches = vi.spyOn(Git.prototype, 'fetch');
+    try {
+      await workspaces.prepareRemotes('api', ['web'], 'main');
+      const { workspace } = await create('asked-early', ['web']);
+      expect(heads.mock.calls.map(([repo]) => path.basename(repo)).sort()).toEqual(['api', 'web']);
+      expect(
+        fetches.mock.calls.map(([repo, , base]) => [path.basename(repo), base]).sort(),
+      ).toEqual([
+        ['api', 'main'],
+        ['web', 'main'],
+      ]);
+      // Started from the fetched base, as before.
+      expect(fx.git(workspace.worktreePath, 'rev-parse', 'HEAD')).toBe(
+        fx.git(projects[0]?.repoPath as string, 'rev-parse', 'origin/main'),
+      );
+    } finally {
+      heads.mockRestore();
+      fetches.mockRestore();
+    }
   });
 
   it('gives a branch from the task the next free name; offers it for a typed one', async () => {

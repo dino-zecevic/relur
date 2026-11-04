@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
 import type { Env } from '../env/scrub';
 
@@ -11,6 +11,9 @@ export function gitReason(error: unknown): string {
     .find(Boolean);
   return (line ?? text).replace(/^(fatal|error):\s*/i, '');
 }
+
+/** How long Create waits for the remote, per `ls-remote` or `fetch` (spec §7.3). */
+export const NETWORK_TIMEOUT_SEC = 30;
 
 export class GitError extends Error {
   constructor(
@@ -79,16 +82,18 @@ export interface GitOptions {
 export class Git {
   constructor(private readonly options: GitOptions) {}
 
-  run(cwd: string, args: string[]): Promise<string> {
+  /**
+   * Runs git. With `timeoutSec`, it runs in its own process group, which is
+   * stopped after that long: the ssh it started for a remote goes too.
+   */
+  run(cwd: string, args: string[], { timeoutSec }: { timeoutSec?: number } = {}): Promise<string> {
+    const env = { ...this.options.env, GIT_TERMINAL_PROMPT: '0' };
+    if (timeoutSec !== undefined) return this.runTimed(cwd, args, env, timeoutSec);
     return new Promise((resolve, reject) => {
       execFile(
         this.options.gitPath,
         args,
-        {
-          cwd,
-          env: { ...this.options.env, GIT_TERMINAL_PROMPT: '0' },
-          maxBuffer: 64 * 1024 * 1024,
-        },
+        { cwd, env, maxBuffer: 64 * 1024 * 1024 },
         (error, stdout, stderr) => {
           if (error) {
             const code = typeof error.code === 'number' ? error.code : null;
@@ -98,6 +103,42 @@ export class Git {
           }
         },
       );
+    });
+  }
+
+  private runTimed(cwd: string, args: string[], env: Env, timeoutSec: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+      const child = spawn(this.options.gitPath, args, {
+        cwd,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          if (child.pid) process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          // already gone
+        }
+      }, timeoutSec * 1000);
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8');
+      });
+      const done = (code: number | null, message = '') => {
+        clearTimeout(timer);
+        if (timedOut) reject(new GitError(args, null, `timed out after ${timeoutSec} s`));
+        else if (code !== 0) reject(new GitError(args, code, stderr || message));
+        else resolve(stdout);
+      };
+      child.on('error', (error) => done(null, error.message));
+      child.on('close', (code) => done(code));
     });
   }
 
@@ -180,7 +221,9 @@ export class Git {
 
   /** The remote's branches, asked of the remote itself (network). */
   async remoteHeads(repo: string, remote: string): Promise<Set<string>> {
-    const out = await this.run(repo, ['ls-remote', '--heads', remote]);
+    const out = await this.run(repo, ['ls-remote', '--heads', remote], {
+      timeoutSec: NETWORK_TIMEOUT_SEC,
+    });
     return new Set(
       out
         .split('\n')
@@ -205,7 +248,7 @@ export class Git {
   }
 
   async fetch(repo: string, remote: string, branch: string): Promise<void> {
-    await this.run(repo, ['fetch', '--quiet', remote, branch]);
+    await this.run(repo, ['fetch', '--quiet', remote, branch], { timeoutSec: NETWORK_TIMEOUT_SEC });
   }
 
   /**
