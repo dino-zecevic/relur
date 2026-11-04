@@ -133,10 +133,13 @@ jobs:
             --notes-file "$RUNNER_TEMP/notes.md" \
             assets/*
 
-      # The landing page reads the latest version when it's built.
+      # The landing page reads the latest version when it's built. The release
+      # is out by now, so a failing hook only warns (spec §15.4).
       - name: Rebuild the landing page
         env:
           HOOK: ${{ secrets.LANDING_DEPLOY_HOOK }}
         run: |
           if [ -z "$HOOK" ]; then echo "No LANDING_DEPLOY_HOOK secret: skipped"; exit 0; fi
-          curl -fsS -X POST "$HOOK" > /dev/null
+          if ! curl -fsS --max-time 30 -X POST "$HOOK" > /dev/null; then
+            echo "::warning::The landing page's deploy hook failed; the release is published, rebuild the page by hand"
+          fi
