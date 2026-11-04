@@ -1210,7 +1210,7 @@ exec sleep 600
     const memoryTotal = `document.querySelector('footer [data-memory]')`;
     assert.match(
       await page.eval<string>(`${memoryTotal}.innerText.replace(/\\s+/g, ' ')`),
-      new RegExp(`^Sessions ${size}$`),
+      new RegExp(`^Memory ${size}$`),
     );
     assert.match(
       await page.eval<string>(`${memoryTotal}.title`),

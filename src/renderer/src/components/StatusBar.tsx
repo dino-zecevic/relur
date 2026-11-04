@@ -121,7 +121,7 @@ export function StatusBar({
             title={memoryTooltip(memory)}
             className="flex items-center gap-1.5 whitespace-nowrap"
           >
-            <span className="text-fg-muted">Sessions</span>
+            <span className="text-fg-muted">Memory</span>
             <span className="font-mono text-xs">
               {memory.sessions.length > 0 ? formatBytes(sessionsTotal(memory)) : '—'}
             </span>

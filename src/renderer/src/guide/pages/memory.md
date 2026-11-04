@@ -15,7 +15,7 @@ Shells you open yourself in a workspace's terminal tabs aren't counted, and neit
 
 ## In the status bar
 
-**Sessions** next to the plan usage is the total of every running Claude session, in all profiles. Hover it to see the five largest workspaces, each split into Claude and what it started, for example:
+**Memory** next to the plan usage is the total of every running Claude session, in all profiles. Hover it to see the five largest workspaces, each split into Claude and what it started, for example:
 
 ```
 ABC-142  1.5 GB (Claude 300 MB, other 1.2 GB: node dev server)

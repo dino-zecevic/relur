@@ -316,11 +316,11 @@ Spec §6.10. `ProjectView.tsx`, `bg-canvas`, header `px-6 pt-5`.
 - **Skills tab** and **Workflow tab:** spec §13.2 and Workflow settings above.
 - **Keyboard:** ⌘N, ⌘T, ⌘L and ⌘E act on the shown project. The workspace table is reached with Tab (the title buttons); ↑↓ in the table is not built.
 
-## Session memory (status bar)
+## Memory (status bar)
 
 Spec §6.14. `StatusBar.tsx`, just left of plan usage.
 
-- "Sessions" in `text-fg-muted`, then the total in `font-mono text-xs` ("1.4 GB"; "—" when no Claude session runs). Hidden until the first measurement.
+- "Memory" in `text-fg-muted`, then the total in `font-mono text-xs` ("1.4 GB"; "—" when no Claude session runs). Hidden until the first measurement.
 - **Tooltip** (native, multi-line): "Claude sessions and what they started: 2.1 GB", the five largest workspaces as "ABC-142  1.5 GB (Claude 300 MB, other 1.2 GB: node dev server)", "and n more", a blank line, "This app: 640 MB".
 - Updates in place every 10 s while the window is visible: no animation, no loading state.
 - Not a button. Not in the sidebar rows.
