@@ -4,6 +4,12 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-04
+
+### Added
+
+- In terminals, ⇧↵ starts a new line in Claude's prompt instead of sending it (Relur sends ESC ↵, so `/terminal-setup` isn't needed). On macOS, ⌘⌫ deletes to the start of the line, as in other macOS terminals.
+
 ## [0.3.1] - 2026-11-03
 
 ### Added
@@ -65,7 +71,8 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/dino-zecevic/relur/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/dino-zecevic/relur/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/dino-zecevic/relur/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/dino-zecevic/relur/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/dino-zecevic/relur/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dino-zecevic/relur/compare/v0.1.0...v0.2.0
