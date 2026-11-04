@@ -26,8 +26,6 @@ const row =
 const rowState = (selected: boolean) =>
   selected ? 'bg-selected font-medium text-fg' : 'text-fg hover:bg-raised';
 
-const isMac = navigator.userAgent.includes('Mac');
-
 /** The glyphs a collapsed project shows, most urgent first (spec §6.1). */
 const URGENCY: Glyph[] = ['permission', 'input', 'approval', 'error', 'working'];
 
