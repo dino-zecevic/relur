@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AppLog } from '../app-log';
 import { type LookupContext, TaskLookupService } from './lookup';
 
 let root: string;
 let service: TaskLookupService;
+let log: AppLog;
 
 const script = (name: string, body: string) => {
   const file = path.join(root, name);
@@ -23,14 +25,15 @@ beforeEach(() => {
     claudeCommand: script(
       'claude',
       `case "$2" in
-  *FAKE-1*) echo '{"type":"result","is_error":false,"result":"","structured_output":{"title":"Fix the login","missingTool":null},"permission_denials":[]}' ;;
+  *FAKE-1*) echo '{"type":"result","is_error":false,"duration_ms":812,"duration_api_ms":640,"num_turns":3,"result":"","structured_output":{"title":"Fix the login","missingTool":null},"permission_denials":[]}' ;;
   *FAKE-2*) echo '{"type":"result","is_error":false,"result":"NO","permission_denials":[{"tool_name":"mcp__tracker__get_issue"}]}' ;;
   *) exit 1 ;;
 esac`,
     ),
     pluginDirs: [],
   };
-  service = new TaskLookupService(async () => context);
+  log = new AppLog(path.join(root, 'logs', 'app.log'));
+  service = new TaskLookupService(async () => context, log);
 });
 
 afterEach(() => {
@@ -90,5 +93,24 @@ describe('TaskLookupService', () => {
       refused: ['mcp__tracker__get_issue'],
     });
     expect(await run('FAKE-3', prompt)).toMatchObject({ ok: false, message: /exit 1/ });
+  });
+
+  it("logs each phase, Claude's own times and the outcome (spec §3.4)", async () => {
+    await run('FAKE-1', prompt);
+    await run('FAKE-9', { kind: 'command', command: 'true', timeoutSec: 10 });
+    const lines = fs.readFileSync(log.file, 'utf8').trimEnd().split('\n');
+    const text = lines.map((l) => l.replace(/^\S+ /, '').replace(/\d+ ms/g, 'N ms'));
+    expect(text).toEqual([
+      'lookup FAKE-1 (p): environment N ms',
+      'lookup FAKE-1 (p): claude -p N ms',
+      'lookup FAKE-1 (p): claude reports N ms, API N ms, 3 turns',
+      'lookup FAKE-1 (p): found',
+      'lookup FAKE-1 (p): total N ms',
+      'lookup FAKE-9 (p): environment N ms',
+      'lookup FAKE-9 (p): command N ms',
+      'lookup FAKE-9 (p): not found: The lookup printed nothing',
+      'lookup FAKE-9 (p): total N ms',
+    ]);
+    expect(lines[0]).toMatch(/^\d{4}-\d\d-\d\dT\S+Z /);
   });
 });

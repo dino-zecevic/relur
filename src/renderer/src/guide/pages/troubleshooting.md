@@ -52,6 +52,10 @@ Each setup line runs on its own. Write `cd app && npm install` on one line. See 
 
 {{app}} can't ask for a password. Set up git's credentials once in a Shell tab, then push again. See [Commit, Push, Create PR](finishing-work#commit-push-create-pr).
 
+## Creating a workspace takes long
+
+{{app}} times each step of Create and of the task lookup in `app.log` in its settings folder, `{{configDir}}/app.log`. Each line names the step and its milliseconds, for example `git fetch origin main 1914 ms` or `lookup ABC-123 (work): claude -p 18450 ms`, and a Claude lookup adds how many turns Claude took. The lines end with `Claude's session started` and `total since Create`.
+
 ## Where are my worktrees?
 
 In the project view's **Worktrees** line. See [Where worktrees go](worktrees).

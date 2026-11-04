@@ -22,6 +22,7 @@ import {
   type WorkspaceTask,
   workspaceRepo,
 } from '@shared/workspaces';
+import { type AppLog, PhaseTimer } from '../app-log';
 import { baseRef } from '../changes/service';
 import type { ConfigStore } from '../config/store';
 import type { WorkspaceRecords } from '../db/workspaces';
@@ -173,6 +174,14 @@ export class WorkspaceService {
   /** What happens once every running setup of a workspace has finished (spec §21.3). */
   private readonly afterSetup = new Map<string, { start: boolean; restart: boolean }>();
 
+  /** Where Create's phases are timed (spec §3.4); set by the app. */
+  log: AppLog | null = null;
+  /**
+   * The timers of workspaces just created, until their Claude's session has
+   * started: setup and Claude's start come after Create returns.
+   */
+  private readonly timings = new Map<string, { timer: PhaseTimer; claudeAt: number | null }>();
+
   constructor(
     private readonly config: ConfigStore,
     private readonly env: EnvService,
@@ -252,7 +261,21 @@ export class WorkspaceService {
    * saved removes every worktree and branch created so far.
    */
   async create(input: CreateWorkspaceInput): Promise<CreateResult> {
-    const { project, profile, git } = await this.context(input.projectId);
+    const timer = new PhaseTimer(this.log, `create ${input.branch.trim()} in ${input.projectId}`);
+    try {
+      const result = await this.createTimed(input, timer);
+      timer.total('Create done');
+      return result;
+    } catch (error) {
+      timer.total(`Create failed (${error instanceof Error ? error.message : String(error)})`);
+      throw error;
+    }
+  }
+
+  private async createTimed(input: CreateWorkspaceInput, timer: PhaseTimer): Promise<CreateResult> {
+    const { project, profile, git } = await timer.time('environment', () =>
+      this.context(input.projectId),
+    );
     const wanted = input.uniqueBranch ? validBranchName(input.branch.trim()) : input.branch.trim();
     const base = input.baseBranch.trim();
     const title = input.title.trim();
@@ -260,7 +283,9 @@ export class WorkspaceService {
     if (!base) throw new Error('Enter a base branch');
     const linkedIds = [...new Set(input.linkedProjectIds ?? [])].filter((id) => id !== project.id);
     if (!input.uniqueBranch) {
-      const problem = await this.branchProblem(project.id, wanted, linkedIds);
+      const problem = await timer.time('branch check', () =>
+        this.branchProblem(project.id, wanted, linkedIds),
+      );
       if (problem) throw new Error(problem);
     } else if (!wanted) {
       throw new Error('Enter a branch name');
@@ -268,12 +293,19 @@ export class WorkspaceService {
     const projects = [project, ...linkedIds.map((id) => this.linkable(project, id))];
     // Spec §7.3: each remote is asked once, for the branch and the base.
     const remoteTargets = await Promise.all(
-      projects.map(async (p) => ({ project: p, remote: await this.askRemote(git, p) })),
+      projects.map(async (p) => ({
+        project: p,
+        remote: p.remote
+          ? await timer.time(`git ls-remote ${p.remote} (${p.name})`, () => this.askRemote(git, p))
+          : null,
+      })),
     );
     const notes: string[] = [];
     let branch = wanted;
     if (input.uniqueBranch) {
-      branch = await this.freeBranch(git, profile, remoteTargets, wanted);
+      branch = await timer.time('free branch name', () =>
+        this.freeBranch(git, profile, remoteTargets, wanted),
+      );
       if (branch !== wanted) notes.push(`${wanted} already exists; the branch is ${branch}`);
     } else {
       for (const { project: p, remote } of remoteTargets) {
@@ -312,6 +344,7 @@ export class WorkspaceService {
           task,
           {
             named: several,
+            timer,
             onCreated: () =>
               created.push({ repo: expandHome(target.project.repoPath), worktreePath }),
           },
@@ -362,6 +395,7 @@ export class WorkspaceService {
       createdAt: now,
       lastActivityAt: now,
     };
+    const recording = performance.now();
     try {
       // One block for the workspace, as large as any repository asks for (spec §21.2).
       workspace.ports = await step('Allocating ports', async () =>
@@ -381,6 +415,7 @@ export class WorkspaceService {
         const start = await git.revParse(repo.worktreePath, 'HEAD');
         if (start) this.records.setStartCommit(workspace.id, start, repo.projectId);
       }
+      timer.since('ports and records', recording);
     } catch (error) {
       await this.removeCreated(git, created, branch);
       for (const p of paths) this.creating.delete(path.resolve(p));
@@ -407,15 +442,15 @@ export class WorkspaceService {
         notes,
       };
     }
+    this.timings.set(workspace.id, { timer, claudeAt: null });
     const withSetup = plans.filter((p) => p.plan.setup.length > 0);
     // The main repository's plan says whether Claude waits for setup.
     const mainPlan = (plans[0] as (typeof plans)[number]).plan;
     if (input.runSetup !== false && withSetup.length > 0) {
       const afterSetup = mainPlan.startClaude === 'after-setup';
-      const sessions = await this.startSetups(workspace, withSetup, {
-        start: afterSetup,
-        restart: false,
-      });
+      const sessions = await timer.time('setup started', () =>
+        this.startSetups(workspace, withSetup, { start: afterSetup, restart: false }),
+      );
       const setup = sessions[0] ?? null;
       if (afterSetup) return { workspace, claude: null, claudeError: null, setup, notes };
       return { ...(await this.launchClaude(workspace)), setup, notes };
@@ -588,7 +623,7 @@ export class WorkspaceService {
     branch: string,
     base: string,
     task: WorkspaceTask,
-    { named, onCreated }: { named: boolean; onCreated: () => void },
+    { named, timer, onCreated }: { named: boolean; timer: PhaseTimer; onCreated: () => void },
   ): Promise<string | null> {
     const repo = expandHome(project.repoPath);
     const of = named ? ` (${project.name})` : '';
@@ -604,14 +639,14 @@ export class WorkspaceService {
       }
       if ('heads' in remoteHeads && remoteHeads.heads.has(base)) {
         try {
-          await git.fetch(repo, remote, base);
+          await timer.time(`git fetch ${remote} ${base}${of}`, () => git.fetch(repo, remote, base));
           startPoint = `${remote}/${base}`;
         } catch (error) {
           reason = gitReason(error);
         }
       }
       if (startPoint === base) {
-        if (!(await git.localBranchExists(repo, base))) {
+        if (!(await timer.time(`local ${base}${of}`, () => git.localBranchExists(repo, base)))) {
           throw new Error(
             reason
               ? `Couldn't fetch ${remote}/${base}${of} (${reason}), and there is no local branch ${base}`
@@ -624,14 +659,17 @@ export class WorkspaceService {
       }
     }
     fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
-    await step(`git worktree add${of}`, () =>
+    const timed = <T>(name: string, run: () => Promise<T>) =>
+      step(name, () => timer.time(name, run));
+    await timed(`git worktree add${of}`, () =>
       git.addWorktree(repo, worktreePath, branch, startPoint),
     );
     onCreated();
-    await step(`Copying the .worktreeinclude files${of}`, () =>
+    const copied = await timed(`Copying the .worktreeinclude files${of}`, () =>
       copyIncludedFiles(git, repo, worktreePath),
     );
-    await step(`Writing the task file${of}`, async () => {
+    timer.note(`${copied.length} .worktreeinclude files copied${of}`);
+    await timed(`Writing the task file${of}`, async () => {
       const dir = path.join(worktreePath, BRAND.repoDirName);
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'task.md'), taskFile(task));
@@ -666,19 +704,38 @@ export class WorkspaceService {
     return project.baseBranch ?? profile.defaults.baseBranch;
   }
 
+  /**
+   * A workspace's Claude reported SessionStart: for one just created, its
+   * start and the whole Create are timed (spec §3.4).
+   */
+  sessionStarted(workspaceId: string): void {
+    const timing = this.timings.get(workspaceId);
+    if (timing?.claudeAt == null) return;
+    this.timings.delete(workspaceId);
+    timing.timer.since("Claude's session started", timing.claudeAt);
+    timing.timer.total('total since Create');
+  }
+
   /** Starts Claude in a new workspace; a failure leaves it in Error with the reason. */
   private async launchClaude(
     workspace: Workspace,
   ): Promise<{ workspace: Workspace; claude: SessionInfo | null; claudeError: string | null }> {
+    const timing = this.timings.get(workspace.id);
     try {
       const current = this.records.get(workspace.id) ?? workspace;
+      const spawning = performance.now();
       const claude = await this.terminals.startClaudeInWorkspace(
         current,
         this.settingsFile(workspace.profileId),
         this.startOptions(current),
       );
+      if (timing) {
+        timing.timer.since('Claude spawned', spawning);
+        timing.claudeAt = performance.now();
+      }
       return { workspace, claude, claudeError: null };
     } catch (error) {
+      this.timings.delete(workspace.id);
       const message = error instanceof Error ? error.message : String(error);
       this.records.setState(workspace.id, 'error', { message });
       return { workspace, claude: null, claudeError: message };
@@ -733,12 +790,16 @@ export class WorkspaceService {
       projectId,
     );
     let timedOut = false;
+    const started = performance.now();
     const timer = setTimeout(() => {
       timedOut = true;
       void host.remove(session.id);
     }, plan.setupTimeoutSec * 1000);
     void host.waitForExit(session.id).then(async (exited) => {
       clearTimeout(timer);
+      this.timings
+        .get(workspace.id)
+        ?.timer.since(`setup of ${projectId} ended (exit ${exited.exitCode ?? '?'})`, started);
       const current = this.records.get(workspace.id);
       // Deleted, or the repository unlinked, meanwhile.
       if (!current || !workspaceRepo(current, projectId)) return;
@@ -965,17 +1026,21 @@ export class WorkspaceService {
     const base = this.projectBase(profile, project);
     let created = false;
     const notes: string[] = [];
+    const timer = new PhaseTimer(this.log, `link ${project.id} into ${branch}`);
     try {
       const note = await this.addRepoWorktree(
         git,
         project,
-        await this.askRemote(git, project),
+        project.remote
+          ? await timer.time(`git ls-remote ${project.remote}`, () => this.askRemote(git, project))
+          : null,
         worktreePath,
         branch,
         base,
         workspace.task,
         {
           named: true,
+          timer,
           onCreated: () => {
             created = true;
           },
@@ -1164,6 +1229,7 @@ export class WorkspaceService {
     }: RepoDeleteChoice & { repos?: (RepoDeleteChoice & { projectId: string })[] },
   ): Promise<{ teardown: CommandResult | null; teardowns: CommandResult[] }> {
     const workspace = this.workspace(workspaceId);
+    this.timings.delete(workspaceId);
     const host = this.terminals.host;
     await Promise.all(
       host

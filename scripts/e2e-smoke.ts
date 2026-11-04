@@ -3241,6 +3241,26 @@ exec sleep 600
     const lookedUp = await claudeRun(runsBefore);
     assert.equal(path.basename(lookedUp.split('\n')[0] as string), 'FAKE-1-fix-the-fake-login');
     assert.match(lookedUp, /^Plan FAKE-1: Fix the fake login\.$/m);
+    // The app's log times the lookup and each phase of Create, up to Claude's
+    // session start (spec §3.4); with Also in, a repository's phases name it.
+    const appLog = path.join(path.dirname(configFile), 'app.log');
+    const logged = async (pattern: RegExp) => {
+      for (let i = 0; i < 100 && !pattern.test(fs.readFileSync(appLog, 'utf8')); i++)
+        await sleep(100);
+      assert.match(fs.readFileSync(appLog, 'utf8'), pattern);
+    };
+    await logged(/ create FAKE-1-fix-the-fake-login in \S+: total since Create \d+ ms$/m);
+    const timings = fs.readFileSync(appLog, 'utf8');
+    for (const line of [
+      /Z lookup FAKE-1 \(\S+\): command \d+ ms$/m,
+      /Z lookup FAKE-1 \(\S+\): found$/m,
+      /Z create FAKE-1-fix-the-fake-login in \S+: git worktree add (\(\S+\) )?\d+ ms$/m,
+      /Z create FAKE-1-fix-the-fake-login in \S+: Copying the \.worktreeinclude files (\(\S+\) )?\d+ ms$/m,
+      /Z create FAKE-1-fix-the-fake-login in \S+: Create done \d+ ms$/m,
+      /Z create FAKE-1-fix-the-fake-login in \S+: Claude spawned \d+ ms$/m,
+      /Z create FAKE-1-fix-the-fake-login in \S+: Claude's session started \d+ ms$/m,
+    ])
+      assert.match(timings, line);
     await clickLabel(page, 'New workspace in shop');
     await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'the dialog');
     await typeInField(page, '#ws-task', 'Plain experiment', false);

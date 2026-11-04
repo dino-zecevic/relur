@@ -9,6 +9,7 @@ import {
 } from '@shared/lookup';
 import type { TaskLookup } from '@shared/schemas';
 import { shellQuote } from '@shared/shell';
+import { type AppLog, PhaseTimer } from '../app-log';
 
 /** Output beyond this is dropped. */
 const MAX_OUTPUT = 1024 * 1024;
@@ -97,6 +98,25 @@ const excerpt = (text: string) => {
   return lines.length > 300 ? `${lines.slice(0, 300)}…` : lines;
 };
 
+export interface LookupRequest {
+  requestId: string;
+  profileId: string;
+  projectId: string | null;
+  taskId: string;
+  lookup: TaskLookup;
+}
+
+/** Claude's own account of a print-mode run: its time, the API's share and its turns. */
+function claudeStats(stdout: string): string | null {
+  try {
+    const result = JSON.parse(stdout.trim().split('\n').pop() ?? '');
+    if (typeof result?.duration_ms !== 'number') return null;
+    return `claude reports ${result.duration_ms} ms, API ${result.duration_api_ms ?? '?'} ms, ${result.num_turns ?? '?'} turns`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Task lookups (spec §13.7): finds a task's title from its id with the
  * profile's Claude (`claude -p`) or a command, stopped after its timeout or
@@ -110,19 +130,29 @@ export class TaskLookupService {
       profileId: string,
       projectId: string | null,
     ) => Promise<LookupContext>,
+    /** Where each lookup's phases are timed (spec §3.4). */
+    private readonly log: AppLog | null = null,
   ) {}
 
-  async run(options: {
-    requestId: string;
-    profileId: string;
-    projectId: string | null;
-    taskId: string;
-    lookup: TaskLookup;
-  }): Promise<LookupResult> {
-    const { requestId, taskId, lookup } = options;
+  async run(request: LookupRequest): Promise<LookupResult> {
+    const timer = new PhaseTimer(this.log, `lookup ${request.taskId} (${request.profileId})`);
+    const result = await this.lookUp(request, timer);
+    timer.note(
+      result.ok ? 'found' : `${result.notFound ? 'not found' : 'failed'}: ${result.message}`,
+    );
+    timer.total();
+    return result;
+  }
+
+  private async lookUp(
+    { requestId, taskId, lookup, ...options }: LookupRequest,
+    timer: PhaseTimer,
+  ): Promise<LookupResult> {
     let context: LookupContext;
     try {
-      context = await this.context(options.profileId, options.projectId);
+      context = await timer.time('environment', () =>
+        this.context(options.profileId, options.projectId),
+      );
     } catch (error) {
       return lookupFailed(error instanceof Error ? error.message : String(error));
     }
@@ -143,12 +173,16 @@ export class TaskLookupService {
         args: ['-c', lookup.command.replaceAll('{id}', shellQuote(taskId))],
       };
     }
-    const exited = await runProcess(
-      { ...run, cwd: context.cwd, env: context.env },
-      lookup.timeoutSec,
-      (cancel) => this.running.set(requestId, cancel),
+    const exited = await timer.time(lookup.kind === 'prompt' ? 'claude -p' : 'command', () =>
+      runProcess({ ...run, cwd: context.cwd, env: context.env }, lookup.timeoutSec, (cancel) =>
+        this.running.set(requestId, cancel),
+      ),
     );
     this.running.delete(requestId);
+    if (lookup.kind === 'prompt') {
+      const stats = claudeStats(exited.stdout);
+      if (stats) timer.note(stats);
+    }
     if (exited.cancelled) return lookupFailed('Cancelled');
     if (exited.timedOut) return lookupFailed(`The lookup timed out after ${lookup.timeoutSec} s`);
     if (lookup.kind === 'prompt') {

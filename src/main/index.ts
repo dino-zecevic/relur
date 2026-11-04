@@ -8,6 +8,7 @@ import { planLimitReached } from '@shared/unfinished';
 import { LATEST_RELEASE_URL } from '@shared/updates';
 import { parseRateLimits } from '@shared/usage';
 import { app, BrowserWindow, dialog, powerMonitor, shell } from 'electron';
+import { APP_LOG_FILE, AppLog } from './app-log';
 import { HookBridge } from './bridge/server';
 import { FinishService, PR_POLL_MS } from './changes/finish';
 import { claudeSettings, writeClaudeSettings } from './claude/settings';
@@ -476,11 +477,16 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       (profileId) =>
         env?.profile(profileId).claude.askBeforeLink === false ? plainSettings : askLinkSettings,
     );
+    // Create's and the task lookup's phases, timed (spec §3.4).
+    const appLog = new AppLog(path.join(dataDir, APP_LOG_FILE));
+    workspaces.log = appLog;
+    status.onSessionStart((workspaceId) => workspaces.sessionStarted(workspaceId));
     // The workflow read from each workspace's status file (spec §13.4, §13.5).
     const workflow = new WorkflowService(config, workspaceRecords, terminals);
     status.workflow = workflow;
-    workflow.lookups = new TaskLookupService((profileId, projectId) =>
-      terminals.lookupContext(profileId, projectId),
+    workflow.lookups = new TaskLookupService(
+      (profileId, projectId) => terminals.lookupContext(profileId, projectId),
+      appLog,
     );
     // Set up from my skills (spec §13.10).
     const workflowSetup = new WorkflowSetupService(config, workspaceRecords, skills, (p, q) =>
