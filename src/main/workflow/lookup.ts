@@ -136,7 +136,17 @@ export class TaskLookupService {
 
   async run(request: LookupRequest): Promise<LookupResult> {
     const timer = new PhaseTimer(this.log, `lookup ${request.taskId} (${request.profileId})`);
-    const result = await this.lookUp(request, timer);
+    // A Stop before the process runs (while its environment is read) is kept for it.
+    const stop = { stopped: false };
+    this.running.set(request.requestId, () => {
+      stop.stopped = true;
+    });
+    let result: LookupResult;
+    try {
+      result = await this.lookUp(request, timer, stop);
+    } finally {
+      this.running.delete(request.requestId);
+    }
     timer.note(
       result.ok ? 'found' : `${result.notFound ? 'not found' : 'failed'}: ${result.message}`,
     );
@@ -147,6 +157,7 @@ export class TaskLookupService {
   private async lookUp(
     { requestId, taskId, lookup, ...options }: LookupRequest,
     timer: PhaseTimer,
+    stop: { stopped: boolean },
   ): Promise<LookupResult> {
     let context: LookupContext;
     try {
@@ -156,6 +167,7 @@ export class TaskLookupService {
     } catch (error) {
       return lookupFailed(error instanceof Error ? error.message : String(error));
     }
+    if (stop.stopped) return lookupFailed('Cancelled');
     let run: { command: string; args: string[] };
     if (lookup.kind === 'prompt') {
       if (!context.claudeCommand) return lookupFailed("The profile's Claude was not found on PATH");
@@ -178,7 +190,6 @@ export class TaskLookupService {
         this.running.set(requestId, cancel),
       ),
     );
-    this.running.delete(requestId);
     if (lookup.kind === 'prompt') {
       const stats = claudeStats(exited.stdout);
       if (stats) timer.note(stats);

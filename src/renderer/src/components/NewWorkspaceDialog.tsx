@@ -255,6 +255,13 @@ export function NewWorkspaceDialog({
     rememberAlsoIn(project.id, linkedProjectIds);
   };
 
+  /** Create now (spec §13.7): stops the lookup and creates without a title. */
+  const createNow = () => {
+    if (!project || create.isPending) return;
+    stopLookup();
+    createWith(project, '', branch);
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!canCreate || !project) return;
@@ -549,6 +556,9 @@ export function NewWorkspaceDialog({
         {lookingUp ? (
           <p data-lookup-running className="flex items-center gap-2 text-sm text-fg-muted">
             Looking up <span className="font-mono text-fg">{lookingUp.id}</span>…
+            <button type="button" className={button('secondary', 'sm')} onClick={createNow}>
+              Create now
+            </button>
             <button type="button" className={button('ghost', 'sm')} onClick={stopLookup}>
               Stop
             </button>

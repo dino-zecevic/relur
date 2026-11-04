@@ -95,6 +95,28 @@ describe('TaskLookupService', () => {
     expect(await run('FAKE-3', prompt)).toMatchObject({ ok: false, message: /exit 1/ });
   });
 
+  it('keeps a Cancel that comes before the process runs', async () => {
+    let release: () => void = () => {};
+    const slowContext = new TaskLookupService(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { shell: '/bin/sh', env: {}, cwd: root, claudeCommand: null, pluginDirs: [] };
+    });
+    const started = Date.now();
+    const pending = slowContext.run({
+      requestId: 'early',
+      profileId: 'p',
+      projectId: null,
+      taskId: 'FAKE-1',
+      lookup: { kind: 'command', command: 'sleep 30', timeoutSec: 60 },
+    });
+    slowContext.cancel('early');
+    release();
+    expect(await pending).toMatchObject({ ok: false, message: 'Cancelled' });
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
   it("logs each phase, Claude's own times and the outcome (spec §3.4)", async () => {
     await run('FAKE-1', prompt);
     await run('FAKE-9', { kind: 'command', command: 'true', timeoutSec: 10 });

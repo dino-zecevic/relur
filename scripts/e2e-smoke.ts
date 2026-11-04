@@ -1137,6 +1137,11 @@ exec sleep 600
     await submitDialog(page);
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'the second workspace');
     assert.match(await claudeRun(2), /keep-my-commits/);
+    // Its terminal takes the focus once connected; the sidebar keys come after.
+    await page.waitFor(
+      `!!document.activeElement?.classList.contains('xterm-helper-textarea')`,
+      "the new workspace's terminal in focus",
+    );
 
     // The sidebar from the keyboard (spec §6.1): one Tab stop, ↑↓ ←→, ↵ opens.
     const navKey = `document.activeElement?.closest('[data-nav-key]')?.dataset.navKey ?? null`;
@@ -3311,7 +3316,10 @@ exec sleep 600
     };
     const titlePreview = `document.querySelector('dialog[open] [data-title-preview]')?.textContent`;
     await clickLabel(page, 'New workspace in shop');
-    await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'the dialog');
+    await page.waitFor(
+      `!!document.querySelector('dialog[open] #ws-task')`,
+      'the dialog for FAKE-7',
+    );
     await typeInField(page, '#ws-task', 'FAKE-7', false);
     await page.waitFor(`${titlePreview} === 'Tidy the cart'`, 'the title looked up while typing');
     assert.deepEqual(
@@ -3331,7 +3339,10 @@ exec sleep 600
       'FAKE-7-tidy-the-cart',
     );
     await clickLabel(page, 'New workspace in shop');
-    await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'the dialog');
+    await page.waitFor(
+      `!!document.querySelector('dialog[open] #ws-task')`,
+      'the dialog for SLOW-9',
+    );
     await typeInField(page, '#ws-task', 'SLOW-9', false);
     await page.waitFor(`${titlePreview} === 'looking up…'`, 'the slow lookup');
     for (let i = 0; i < 50 && !lookups().includes('SLOW-9'); i++) await sleep(100);
@@ -3350,7 +3361,49 @@ exec sleep 600
       / lookup SLOW-9 \(\S+\): failed: Cancelled$/m,
     );
     await pressKey(page, 'Escape');
-    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog closed');
+    // Gone, not only closed: the app hears of Escape a moment after the browser.
+    await page.waitFor(`!document.querySelector('dialog #ws-task')`, 'the dialog gone');
+    // Create now (spec §13.7): while ↵ waits for the lookup, creates the
+    // workspace at once without a title, the branch from the id, and stops it.
+    await clickLabel(page, 'New workspace in shop');
+    await page.waitFor(
+      `!!document.querySelector('dialog[open] #ws-task')`,
+      'the dialog for Create now',
+    );
+    await typeInField(page, '#ws-task', 'SLOW-9', false);
+    await submitDialog(page);
+    await page.waitFor(
+      `document.querySelector('dialog[open] [data-lookup-running]')?.textContent.includes('Looking up SLOW-9')`,
+      'Looking up SLOW-9',
+    );
+    const runsBeforeNow = runs();
+    await clickButtonText(page, 'Create now', 'document.querySelector("dialog[open]")');
+    await page.waitFor(
+      `!document.querySelector('dialog[open]') && document.querySelector('h1')?.textContent === 'SLOW-9'`,
+      'the workspace created now',
+      30_000,
+    );
+    assert.equal(
+      fx.git(shop, 'branch', '--list', '--format=%(refname:short)', 'SLOW-9').trim(),
+      'SLOW-9',
+    );
+    await claudeRun(runsBeforeNow);
+    for (
+      let i = 0;
+      i < 50 &&
+      (
+        fs.readFileSync(appLogFile, 'utf8').match(/ lookup SLOW-9 \(\S+\): failed: Cancelled$/gm) ??
+        []
+      ).length < 2;
+      i++
+    )
+      await sleep(100);
+    assert.equal(
+      fs.readFileSync(appLogFile, 'utf8').match(/ lookup SLOW-9 \(\S+\): failed: Cancelled$/gm)
+        ?.length,
+      2,
+      'the lookup stopped',
+    );
 
     // Many linked repositories (spec §21.4): the primary chip in full, the
     // linked ones by name on one line, the rest under "+n more"; a tooltip
