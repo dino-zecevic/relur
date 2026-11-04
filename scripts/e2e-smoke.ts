@@ -2632,13 +2632,14 @@ exec sleep 600
     );
     await page.eval(`document.querySelector('dialog[open] [data-edit-tab=lookup]').click()`);
     await page.waitFor(`!!document.querySelector('[data-lookup-editor]')`, 'the Task lookup tab');
-    // A task lookup (spec §13.7): a scratch command that knows FAKE-1 (after a
-    // second, so "Looking up" shows), finds nothing for FAKE-404 and fails for
-    // anything else.
+    // A task lookup (spec §13.7): a scratch command that knows FAKE-1 and
+    // FAKE-7 (after a second, so "Looking up" shows) and SLOW-9 (after 30 s),
+    // finds nothing for FAKE-404 and fails for anything else. Each run is
+    // recorded in lookups.txt.
     const lookupScript = path.join(fx.root, 'bin', 'fake-lookup');
     fs.writeFileSync(
       lookupScript,
-      `#!/bin/sh\ncase "$1" in\n  FAKE-1) sleep 1; echo "Fix the fake login" ;;\n  FAKE-404) ;;\n  *) echo "no task $1" >&2; exit 3 ;;\nesac\n`,
+      `#!/bin/sh\necho "$1" >> "$HOME/lookups.txt"\ncase "$1" in\n  FAKE-1) sleep 1; echo "Fix the fake login" ;;\n  FAKE-7) sleep 1; echo "Tidy the cart" ;;\n  SLOW-9) sleep 30; echo "A slow task" ;;\n  FAKE-404) ;;\n  *) echo "no task $1" >&2; exit 3 ;;\nesac\n`,
       { mode: 0o755 },
     );
     // Ask Claude: the profile's own model unless one is named, ToolSearch with
@@ -3300,6 +3301,56 @@ exec sleep 600
       'FAKE-404',
     );
     await claudeRun(runsBefore + 2);
+
+    // Looked up while typing (spec §13.7): 600 ms after an id alone, its title
+    // shows under the field and ↵ uses it, without a second lookup; another
+    // id cancels a lookup still running.
+    const lookups = () => {
+      const file = path.join(fx.root, 'lookups.txt');
+      return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n') : [];
+    };
+    const titlePreview = `document.querySelector('dialog[open] [data-title-preview]')?.textContent`;
+    await clickLabel(page, 'New workspace in shop');
+    await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'the dialog');
+    await typeInField(page, '#ws-task', 'FAKE-7', false);
+    await page.waitFor(`${titlePreview} === 'Tidy the cart'`, 'the title looked up while typing');
+    assert.deepEqual(
+      lookups().filter((id) => id === 'FAKE-7'),
+      ['FAKE-7'],
+    );
+    const runsBeforeTyped = runs();
+    await submitDialog(page);
+    await page.waitFor(
+      `!document.querySelector('dialog[open]') && document.querySelector('h1')?.textContent === 'Tidy the cart'`,
+      'the workspace from the title looked up while typing',
+      30_000,
+    );
+    assert.equal(lookups().filter((id) => id === 'FAKE-7').length, 1, 'no second lookup');
+    assert.equal(
+      path.basename((await claudeRun(runsBeforeTyped)).split('\n')[0] as string),
+      'FAKE-7-tidy-the-cart',
+    );
+    await clickLabel(page, 'New workspace in shop');
+    await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'the dialog');
+    await typeInField(page, '#ws-task', 'SLOW-9', false);
+    await page.waitFor(`${titlePreview} === 'looking up…'`, 'the slow lookup');
+    for (let i = 0; i < 50 && !lookups().includes('SLOW-9'); i++) await sleep(100);
+    assert.ok(lookups().includes('SLOW-9'), 'SLOW-9 looked up while typing');
+    await typeInField(page, '#ws-task', 'Something else', false);
+    const appLogFile = path.join(path.dirname(configFile), 'app.log');
+    for (
+      let i = 0;
+      i < 50 &&
+      !/ lookup SLOW-9 \(\S+\): failed: Cancelled$/m.test(fs.readFileSync(appLogFile, 'utf8'));
+      i++
+    )
+      await sleep(100);
+    assert.match(
+      fs.readFileSync(appLogFile, 'utf8'),
+      / lookup SLOW-9 \(\S+\): failed: Cancelled$/m,
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog closed');
 
     // Many linked repositories (spec §21.4): the primary chip in full, the
     // linked ones by name on one line, the rest under "+n more"; a tooltip

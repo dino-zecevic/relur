@@ -12,6 +12,30 @@ import { Modal, ModalFooter } from './Modal';
 
 export type CreatedWorkspace = AppRouterOutputs['workspaces']['create'];
 
+type LookupResult = AppRouterOutputs['workflow']['lookupTitle'];
+/** How a task lookup ended: its result, or the call's own error. */
+interface LookupOutcome {
+  result: LookupResult | null;
+  error: string | null;
+}
+/** A task lookup of New workspace (spec §13.7), started while typing or by ↵. */
+interface LookupRun {
+  /** The project and id it is for. */
+  key: string;
+  id: string;
+  requestId: string;
+  outcome: Promise<LookupOutcome>;
+  /** The outcome, once it came. */
+  settled: LookupOutcome | null;
+}
+
+/** The title preview of an id alone while it is looked up (spec §13.7). */
+function lookupPreview(outcome: LookupOutcome | null): string {
+  if (!outcome) return 'looking up…';
+  if (outcome.result?.ok) return outcome.result.title;
+  return outcome.result?.notFound ? 'not found' : "couldn't look it up";
+}
+
 /** A value that settles `ms` after it stops changing. */
 function useDebounced<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value);
@@ -118,21 +142,73 @@ export function NewWorkspaceDialog({
   const lookup = project ? (profile.taskLookup ?? null) : null;
   const lookupTitle = useMutation(trpc.workflow.lookupTitle.mutationOptions());
   const cancelLookup = useMutation(trpc.workflow.cancelLookup.mutationOptions());
-  // The running lookup; a stale answer (after Cancel) is ignored.
+  // The lookup of the id typed alone, in this project (spec §13.7): started
+  // while typing, its outcome kept for ↵.
+  const lookupKey = project && lookup && taskId && !title ? `${project.id}\n${taskId}` : null;
+  const run = useRef<LookupRun | null>(null);
+  const [lookupState, setLookupState] = useState<{
+    key: string;
+    outcome: LookupOutcome | null;
+  } | null>(null);
+  // Create waits for this lookup; a stale answer (after Stop) is ignored.
   const [lookingUp, setLookingUp] = useState<{ id: string; requestId: string } | null>(null);
+  const waitingFor = useRef<string | null>(null);
   const [lookupError, setLookupError] = useState<{
     id: string;
     message: string;
     /** Claude's own explanation, when it gave one. */
     detail?: string;
   } | null>(null);
-  const running = useRef<string | null>(null);
   const taskInput = useRef<HTMLInputElement>(null);
-  const stopLookup = () => {
-    if (running.current) cancelLookup.mutate({ requestId: running.current });
-    running.current = null;
-    setLookingUp(null);
+  const startLookup = (projectId: string, id: string): LookupRun => {
+    const requestId = crypto.randomUUID();
+    const key = `${projectId}\n${id}`;
+    const entry: LookupRun = {
+      key,
+      id,
+      requestId,
+      settled: null,
+      outcome: lookupTitle
+        .mutateAsync({ requestId, profileId: profile.id, projectId, taskId: id, lookup: null })
+        .then(
+          (result): LookupOutcome => ({ result, error: null }),
+          (error: unknown): LookupOutcome => ({
+            result: null,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        ),
+    };
+    void entry.outcome.then((outcome) => {
+      entry.settled = outcome;
+      if (run.current === entry) setLookupState({ key, outcome });
+    });
+    run.current = entry;
+    setLookupState({ key, outcome: null });
+    return entry;
   };
+  /** Cancels the lookup of the typed id, running or done. */
+  const dropLookup = () => {
+    if (run.current) cancelLookup.mutate({ requestId: run.current.requestId });
+    run.current = null;
+    setLookupState(null);
+  };
+  const stopLookup = () => {
+    waitingFor.current = null;
+    setLookingUp(null);
+    dropLookup();
+  };
+  // Another id, or text that isn't an id alone, cancels the lookup.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on a new key only
+  useEffect(() => {
+    if (run.current && run.current.key !== lookupKey) dropLookup();
+  }, [lookupKey]);
+  // An id alone is looked up 600 ms after it was typed (spec §13.7).
+  const settledKey = useDebounced(lookupKey, 600);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on a settled key only
+  useEffect(() => {
+    if (!settledKey || settledKey !== lookupKey || run.current?.key === settledKey) return;
+    if (project && taskId && !lookingUp) startLookup(project.id, taskId);
+  }, [settledKey]);
   // Closing the dialog stops a lookup still running.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only on unmount
   useEffect(() => () => stopLookup(), []);
@@ -191,52 +267,58 @@ export function NewWorkspaceDialog({
       createWith(project, '', branch);
       return;
     }
-    // A key alone: look its title up, then create (spec §13.7).
+    // A key alone: its title from the lookup, then create (spec §13.7); the
+    // one started while typing when there is one.
     const id = taskId;
-    const requestId = crypto.randomUUID();
-    running.current = requestId;
+    const current =
+      run.current && run.current.key === lookupKey ? run.current : startLookup(project.id, id);
     setLookupError(null);
+    const finish = ({ result, error }: LookupOutcome) => {
+      if (result?.ok) {
+        setTaskText(`${id} ${result.title}`);
+        createWith(
+          project,
+          result.title,
+          branchEdit ??
+            branchFromTemplate(profile.defaults.branchTemplate, { id, title: result.title }),
+        );
+        return;
+      }
+      // An id the lookup doesn't know: created anyway, without a title.
+      if (result && !result.ok && result.notFound) {
+        createWith(
+          project,
+          '',
+          branch,
+          `${id} wasn't found; the branch is named after what you typed`,
+        );
+        return;
+      }
+      setLookupError({
+        id,
+        message: result?.message ?? error ?? 'The lookup failed',
+        detail: result && !result.ok ? result.detail : undefined,
+      });
+      requestAnimationFrame(() => {
+        const input = taskInput.current;
+        input?.focus();
+        input?.setSelectionRange(input.value.length, input.value.length);
+      });
+    };
+    // Already answered: at once, without "Looking up".
+    if (current.settled) {
+      finish(current.settled);
+      return;
+    }
+    const { requestId } = current;
+    waitingFor.current = requestId;
     setLookingUp({ id, requestId });
-    lookupTitle.mutate(
-      { requestId, profileId: profile.id, projectId: project.id, taskId: id, lookup: null },
-      {
-        onSettled: (result, error) => {
-          if (running.current !== requestId) return;
-          running.current = null;
-          setLookingUp(null);
-          if (result?.ok) {
-            setTaskText(`${id} ${result.title}`);
-            createWith(
-              project,
-              result.title,
-              branchEdit ??
-                branchFromTemplate(profile.defaults.branchTemplate, { id, title: result.title }),
-            );
-            return;
-          }
-          // An id the lookup doesn't know: created anyway, without a title.
-          if (result && !result.ok && result.notFound) {
-            createWith(
-              project,
-              '',
-              branch,
-              `${id} wasn't found; the branch is named after what you typed`,
-            );
-            return;
-          }
-          setLookupError({
-            id,
-            message: result?.message ?? error?.message ?? 'The lookup failed',
-            detail: result && !result.ok ? result.detail : undefined,
-          });
-          requestAnimationFrame(() => {
-            const input = taskInput.current;
-            input?.focus();
-            input?.setSelectionRange(input.value.length, input.value.length);
-          });
-        },
-      },
-    );
+    void current.outcome.then((outcome) => {
+      if (waitingFor.current !== requestId) return;
+      waitingFor.current = null;
+      setLookingUp(null);
+      finish(outcome);
+    });
   };
 
   return (
@@ -361,8 +443,11 @@ export function NewWorkspaceDialog({
               ) : null}
               <span className="min-w-0 truncate">
                 Title{' '}
-                <span className="text-fg">
-                  {title || (taskId && lookup ? 'looked up when you create' : '—')}
+                <span data-title-preview className="text-fg">
+                  {title ||
+                    (taskId && lookup
+                      ? lookupPreview(lookupState?.key === lookupKey ? lookupState.outcome : null)
+                      : '—')}
                 </span>
               </span>
             </p>

@@ -20,7 +20,7 @@ The **Branch name** comes from the task until you edit it, and it can't already 
 
 ## Looking up the title
 
-If your profile has a **Task lookup** (Edit profile › Task lookup), type the key alone, like `ABC-123`, and press <kbd>↵</kbd>. The dialog shows **Looking up ABC-123…**, fills in the title, makes the branch from it (`ABC-123-<title>`) and creates the workspace, without another click. **Stop** ends the lookup.
+If your profile has a **Task lookup** (Edit profile › Task lookup), type the key alone, like `ABC-123`. The lookup starts as soon as you pause typing, and the title shows under the field when it's found. Press <kbd>↵</kbd>: the dialog fills in the title, makes the branch from it (`ABC-123-<title>`) and creates the workspace, without another click. If the lookup is still running, the dialog shows **Looking up ABC-123…** and waits for it; **Stop** ends the lookup. Typing another key, or anything else, cancels a lookup that is still running.
 
 If the lookup doesn't find the task (the command printed nothing, or Claude found no title), the workspace is created anyway, without a title, with the branch named after what you typed; a note at the top of the window says "ABC-99999 wasn't found; the branch is named after what you typed".
 
