@@ -27,6 +27,7 @@ An Electron desktop app (macOS and Linux) for running parallel Claude Code sessi
 
 - **The spec is the source of truth.** Every behaviour change updates `docs/SPEC.md` and the Guide pages in the same commit; e2e covers the new behaviour.
 - **Commit only after `npm run verify` passes.** Never commit after a failing test. A commit only ever follows verify in one command, `npm run verify && git commit …`: never `;` between them, never an echo of the status in place of verify's own result, and never a background task's success read as verify's (the task can end with 0 while verify failed inside it).
+- **No AI attribution** in commits or pull request descriptions: no `Co-Authored-By` trailers, no "Generated with" lines. `.claude/settings.json` turns Claude Code's own off; keep it committed.
 - **Generic only:** no company names, internal hosts, accounts or other company values in code, tests, docs or examples.
 - **Live checks** against the real Claude Code: a cheap model (`--model haiku`), scratch folders and a profile you can spare; never real work repositories.
 - **Dependencies:** exact versions only, at least 14 days old.

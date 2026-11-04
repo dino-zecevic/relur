@@ -15,3 +15,6 @@ scripts/lib/claude-tui.ts
 scripts/promo-screenshots.ts
 scripts/promo-demo.ts
 scripts/promo/
+
+# Claude Code: the project settings are shared, the local ones are not.
+.claude/settings.local.json
