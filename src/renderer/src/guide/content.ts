@@ -75,7 +75,7 @@ export const SECTIONS: { title: string; pages: string[] }[] = [
   { title: 'Skills and workflows', pages: ['skills', 'workflows', 'adopting-worktrees'] },
   {
     title: 'Status and alerts',
-    pages: ['status-glyphs', 'notifications', 'plan-usage', 'status-line'],
+    pages: ['status-glyphs', 'notifications', 'plan-usage', 'memory', 'status-line'],
   },
   { title: 'Working with Claude', pages: ['copy-response', 'prompt-navigator', 'resume'] },
   { title: 'Command line tool', pages: ['cli'] },

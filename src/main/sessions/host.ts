@@ -195,6 +195,13 @@ export class SessionHost {
     return this.session(id).info;
   }
 
+  /** Running sessions of a kind with the process id of what they started (spec §6.14). */
+  processes(kind: SessionKind): { info: SessionInfo; pid: number }[] {
+    return [...this.sessions.values()]
+      .filter((s) => s.info.kind === kind && s.info.status === 'running')
+      .map((s) => ({ info: s.info, pid: s.pty.pid }));
+  }
+
   runningCount(): number {
     return this.list().filter((s) => s.status === 'running').length;
   }

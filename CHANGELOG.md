@@ -4,6 +4,10 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- How much memory Claude sessions use, with every process they started (MCP servers, shells, background commands, dev servers): **Sessions** in the status bar, with the five largest workspaces and the app's own memory in its tooltip; a sortable **Memory** column in the project's Workspaces table; and the project's total in its view. Measured every 10 seconds while the window is visible.
+
 ## [0.3.2] - 2026-11-04
 
 ### Added

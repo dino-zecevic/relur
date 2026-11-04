@@ -1,3 +1,4 @@
+import { formatBytes, type MemorySnapshot, memoryTooltip, sessionsTotal } from '@shared/memory';
 import type { Profile } from '@shared/schemas';
 import { needsYou } from '@shared/status';
 import type { UsageSnapshot } from '@shared/usage';
@@ -15,8 +16,8 @@ const triangle = (
 
 /**
  * Profile, where you are, the setup check's warning and environment warnings,
- * the counts of working and needs-you workspaces (spec §6.5), and plan usage
- * (§11), hidden until signed in.
+ * the counts of working and needs-you workspaces (spec §6.5), the memory of
+ * Claude sessions (§6.14), and plan usage (§11), hidden until signed in.
  */
 export function StatusBar({
   profile,
@@ -26,6 +27,7 @@ export function StatusBar({
   usage,
   notice,
   workspaces,
+  memory,
 }: {
   profile: Profile | null;
   location: string;
@@ -38,6 +40,8 @@ export function StatusBar({
   notice: string | null;
   /** The profile's workspaces, for the counts. */
   workspaces: Workspace[];
+  /** Memory of every Claude session and the app (spec §6.14); null before the first measurement. */
+  memory: MemorySnapshot | null;
 }) {
   const trpc = useTRPC();
   const diagnostics = useQuery(trpc.env.diagnostics.queryOptions());
@@ -109,6 +113,18 @@ export function StatusBar({
           >
             <StatusGlyph glyph="input" title="" />
             {waiting} needs you
+          </span>
+        ) : null}
+        {memory ? (
+          <span
+            data-memory
+            title={memoryTooltip(memory)}
+            className="flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <span className="text-fg-muted">Sessions</span>
+            <span className="font-mono text-xs">
+              {memory.sessions.length > 0 ? formatBytes(sessionsTotal(memory)) : '—'}
+            </span>
           </span>
         ) : null}
         {profile && usage.show ? (

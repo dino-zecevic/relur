@@ -26,6 +26,8 @@ import {
   pendingNotice,
   type SettingsMigration,
 } from './legacy/settings';
+import { readProcessTable } from './memory/processes';
+import { MemoryMonitor } from './memory/service';
 import { installAppMenu } from './menu';
 import { markShown, wasShown } from './notices';
 import { appConfigDir, contractHome } from './paths';
@@ -131,6 +133,8 @@ let status: StatusService | null = null;
 /** Work the app's stop interrupts (spec §9.7); set once the app is ready. */
 let unfinished: UnfinishedService | null = null;
 let statusPlatform: ElectronStatusPlatform | null = null;
+/** Memory of Claude sessions and the app (spec §6.14); set once the app is ready. */
+let memory: MemoryMonitor | null = null;
 /** The quit dialog in the window (spec §5): asked with the busy session ids. */
 const quitAsker = new EventEmitter();
 let answerQuit: ((quit: boolean) => void) | null = null;
@@ -193,6 +197,9 @@ function showMainWindow(): void {
   const win = createMainWindow();
   mainWindow = win;
   statusPlatform?.track(win);
+  // Memory is measured only while the window is visible, and at once when it shows (spec §6.14).
+  win.on('show', () => void memory?.refresh());
+  win.on('restore', () => void memory?.refresh());
   win.on('close', (event) => onWindowClose(win, event));
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
@@ -506,6 +513,30 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       onSessionStart: (listener) => status?.onSessionStart(listener) ?? (() => {}),
     });
     unfinished = continuing;
+    // Memory used by Claude sessions (spec §6.14).
+    const monitor = new MemoryMonitor({
+      sessions: () => host.processes('claude'),
+      label: (info) => {
+        const workspace = info.workspaceId ? workspaceRecords.get(info.workspaceId) : null;
+        if (workspace) return workspace.task.id ?? workspace.name;
+        const project = config.get().config?.projects.find((p) => p.id === info.projectId);
+        return project ? `${project.name} (main checkout)` : info.title;
+      },
+      readProcesses: () => readProcessTable(),
+      appProcesses: () =>
+        app
+          .getAppMetrics()
+          .map((m) => ({ pid: m.pid, fallbackBytes: m.memory.workingSetSize * 1024 })),
+      visible: () => BrowserWindow.getAllWindows().some((w) => w.isVisible() && !w.isMinimized()),
+    });
+    memory = monitor;
+    host.onExit(() => monitor.sessionsChanged());
+    // A new session shows in the counts within a moment, not at the next measurement.
+    host.onSpawn((info) => {
+      if (info.kind === 'claude') setTimeout(() => void monitor.refresh(), 1_000);
+    });
+    monitor.start();
+    atShutdown(() => monitor.stop());
     workspaces.adoptPrefill = (projectId, worktree, branch) =>
       workflow.prefill(projectId, worktree, branch);
     // Worktrees made outside the app, by a skill or by hand (spec §13.6).
@@ -577,6 +608,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       feedback,
       helper,
       usage,
+      memory: monitor,
       status,
       statusPlatform,
       setup,

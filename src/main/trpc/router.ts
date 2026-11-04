@@ -27,6 +27,7 @@ import type { UsageRecords } from '../db/usage';
 import type { WorkspaceRecords } from '../db/workspaces';
 import type { EditorService } from '../editor/service';
 import type { EnvService } from '../env/service';
+import type { MemoryMonitor } from '../memory/service';
 import type { MenuFeedback, MenuRequest } from '../menu';
 import { contractHome, expandHome } from '../paths';
 import type { RemoteFound, RemoteWatch } from '../projects/remote-watch';
@@ -73,6 +74,8 @@ export interface Services {
   status: StatusService;
   statusPlatform: ElectronStatusPlatform;
   usage: UsageRecords;
+  /** Memory used by Claude sessions and the app (spec §6.14). */
+  memory: MemoryMonitor;
   /** Menu items the renderer answers with a dialog. */
   menuRequests: EventEmitter;
   /** Report a Bug… and Request a Feature… (spec §6.12), also from the Guide. */
@@ -114,6 +117,7 @@ export function createAppRouter({
   status,
   statusPlatform,
   usage,
+  memory,
   menuRequests,
   feedback,
   helper,
@@ -1168,6 +1172,14 @@ export function createAppRouter({
       all: publicProcedure.query(() => usage.all()),
       changes: publicProcedure.subscription(({ signal }) =>
         fromListener<string>((listener) => usage.onChange(listener), signal),
+      ),
+    }),
+
+    /** Memory of Claude sessions and the app (spec §6.14), measured while the window is visible. */
+    memory: router({
+      current: publicProcedure.query(() => memory.current()),
+      changes: publicProcedure.subscription(({ signal }) =>
+        fromListener<void>((listener) => memory.onChange(listener), signal),
       ),
     }),
 

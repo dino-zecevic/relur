@@ -51,14 +51,14 @@ Under **Worktrees**, choose **Default** or **Choose folder…**. See [Where work
 Click a project's name in the sidebar to open its view; it also opens after you add one. Its header has:
 
 - **New workspace** <kbd>{{key:newWorkspace}}</kbd>, **Open shell** <kbd>{{key:newShell}}</kbd>, **Start Claude here** <kbd>{{key:startClaude}}</kbd> and **Open in editor** <kbd>{{key:openInEditor}}</kbd>. All but the first run in the main checkout; see [Start Claude here](start-claude-here).
-- **Path**, **Base branch**, **Remote** and **Worktrees**. **Remote** has **Change…**: choose one of the repository's remotes, or none. **Worktrees** has **Change…** (and **Use default** once you chose a folder).
+- **Path**, **Base branch**, **Remote** and **Worktrees**, and **Memory** while any of the project's Claude sessions runs ([Memory](memory)). **Remote** has **Change…**: choose one of the repository's remotes, or none. **Worktrees** has **Change…** (and **Use default** once you chose a folder).
 - **Remove…**; see [Removing a project](remove-project).
 
 Below are its tabs:
 
 | Tab | What it has |
 | --- | --- |
-| Workspaces | The project's workspaces: status, task, title, branch and last activity, and the workflow status when there is a workflow. Click one to open it, or Tab to the table, move with ↑ ↓ and open with ↵. Below, [Other worktrees](adopting-worktrees) |
+| Workspaces | The project's workspaces: status, task, title, branch, [memory](memory#in-the-project-view) and last activity, and the workflow status when there is a workflow. Click one to open it, or Tab to the table, move with ↑ ↓ and open with ↵. Below, [Other worktrees](adopting-worktrees) |
 | Setup | The project's **Editor** and its [setup and teardown commands](workspace-setup) |
 | Skills | Which of the profile's [skill sources](skills#per-project) apply to this project |
 | Workflow | The profile's [workflow](workflows#per-project), an override for this project, or none, and its own Start prompt |

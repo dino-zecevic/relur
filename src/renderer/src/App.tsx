@@ -77,6 +77,14 @@ export function App() {
       onData: () => void queryClient.invalidateQueries({ queryKey: trpc.usage.all.queryKey() }),
     }),
   );
+  // Memory of Claude sessions and the app (spec §6.14), measured by the main process.
+  const memory = useQuery(trpc.memory.current.queryOptions());
+  useSubscription(
+    trpc.memory.changes.subscriptionOptions(undefined, {
+      onData: () =>
+        void queryClient.invalidateQueries({ queryKey: trpc.memory.current.queryKey() }),
+    }),
+  );
   const workspaces = useQuery(trpc.workspaces.list.queryOptions());
   // Continuing interrupted work (spec §9.7): the notice and the start's overview.
   const unfinished = useQuery(trpc.unfinished.state.queryOptions());
@@ -840,6 +848,7 @@ export function App() {
                       onRemove={() => setRemoving(project)}
                       onAdopt={(worktree) => setAdopting({ projectId: project.id, worktree })}
                       shortcutError={(projectShell.error ?? projectClaude.error)?.message ?? null}
+                      memory={memory.data ?? null}
                     />
                   ) : profile ? (
                     <HomeView
@@ -879,6 +888,7 @@ export function App() {
             usage={{ snapshot: (profileId && usage.data?.[profileId]) || null, show: setupOk }}
             notice={keyNotice}
             workspaces={profileWorkspaces}
+            memory={memory.data ?? null}
           />
 
           {editingProfile && profiles.some((p) => p.id === editingProfile) ? (

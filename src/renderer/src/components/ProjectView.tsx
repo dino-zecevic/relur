@@ -1,3 +1,10 @@
+import {
+  describeSplit,
+  formatBytes,
+  type MemorySnapshot,
+  projectMemory,
+  workspaceMemory,
+} from '@shared/memory';
 import { projectWorktreeDir } from '@shared/projects';
 import type { Profile, Project } from '@shared/schemas';
 import { matchShortcut } from '@shared/shortcuts';
@@ -45,6 +52,7 @@ export function ProjectView({
   onRemove,
   onAdopt,
   shortcutError,
+  memory,
 }: {
   profile: Profile;
   project: Project;
@@ -62,6 +70,8 @@ export function ProjectView({
   onAdopt: (worktree: OtherWorktree) => void;
   /** An error from the view's keyboard shortcuts (⌘T, ⌘L), which the app runs. */
   shortcutError: string | null;
+  /** Memory of the running Claude sessions (spec §6.14). */
+  memory: MemorySnapshot | null;
 }) {
   // Open in editor (spec §6.13): the main checkout, ⌘E.
   const editorOpen = useOpenInEditor();
@@ -130,6 +140,14 @@ export function ProjectView({
     ['Remote', project.remote ?? 'none'],
     ['Worktrees', `${projectWorktreeDir(profile, project)}/`],
   ];
+  // The project's running Claude sessions (spec §6.14), only while any runs.
+  const used = projectMemory(memory, project.id);
+  if (used) {
+    details.push([
+      'Memory',
+      `${formatBytes(used.bytes)} · ${used.sessions} ${used.sessions === 1 ? 'session' : 'sessions'}`,
+    ]);
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-canvas">
@@ -352,6 +370,7 @@ export function ProjectView({
         <div className="min-h-0 flex-1 overflow-y-auto px-4">
           <WorkspaceTable
             workspaces={workspaces}
+            memory={memory}
             onOpen={onOpenWorkspace}
             onNewWorkspace={onNewWorkspace}
           />
@@ -362,16 +381,38 @@ export function ProjectView({
   );
 }
 
+type MemorySort = 'none' | 'descending' | 'ascending';
+const NEXT_SORT: Record<MemorySort, MemorySort> = {
+  none: 'descending',
+  descending: 'ascending',
+  ascending: 'none',
+};
+
 function WorkspaceTable({
-  workspaces,
+  workspaces: unsorted,
+  memory,
   onOpen,
   onNewWorkspace,
 }: {
   workspaces: Workspace[];
+  memory: MemorySnapshot | null;
   onOpen: (workspace: Workspace) => void;
   onNewWorkspace: (() => void) | null;
 }) {
   const launching = useLaunching();
+  // The Memory column sorts (spec §6.14): largest first, smallest first, then as listed.
+  // Workspaces without a running session stay last.
+  const [sort, setSort] = useState<MemorySort>('none');
+  const used = new Map(unsorted.map((w) => [w.id, workspaceMemory(memory, w.id)]));
+  const workspaces =
+    sort === 'none'
+      ? unsorted
+      : [...unsorted].sort((a, b) => {
+          const x = used.get(a.id)?.total;
+          const y = used.get(b.id)?.total;
+          if (x === undefined || y === undefined) return x === y ? 0 : x === undefined ? 1 : -1;
+          return sort === 'descending' ? y - x : x - y;
+        });
   // Keyboard (spec §6.10): one Tab stop on the rows; ↑↓ move, ↵ opens.
   const [focused, setFocused] = useState(0);
   const tbody = useRef<HTMLTableSectionElement>(null);
@@ -426,12 +467,30 @@ function WorkspaceTable({
           <th className={`${cell} w-24 font-normal`}>Task</th>
           <th className={`${cell} font-normal`}>Title</th>
           <th className={`${cell} w-[30%] font-normal`}>Branch</th>
+          <th
+            className={`${cell} w-24 text-right font-normal`}
+            aria-sort={sort === 'none' ? undefined : sort}
+          >
+            <button
+              type="button"
+              data-sort-memory
+              title="Sort by memory"
+              className="inline-flex items-center gap-1 hover:text-fg"
+              onClick={() => setSort(NEXT_SORT[sort])}
+            >
+              Memory
+              <span aria-hidden className="w-2 text-xs">
+                {sort === 'descending' ? '↓' : sort === 'ascending' ? '↑' : ''}
+              </span>
+            </button>
+          </th>
           <th className={`${cell} w-16 text-right font-normal`}>Active</th>
         </tr>
       </thead>
       <tbody ref={tbody}>
         {workspaces.map((w, index) => {
           const glyph = glyphFor(w.state, w.unread, launching.has(w.id));
+          const mem = used.get(w.id);
           return (
             <tr
               key={w.id}
@@ -477,6 +536,13 @@ function WorkspaceTable({
                 </button>
               </td>
               <td className={`${cell} truncate font-mono text-sm`}>{w.branch}</td>
+              <td
+                data-memory-cell
+                className={`${cell} truncate text-right font-mono text-sm text-fg-muted`}
+                title={mem ? describeSplit(mem) : undefined}
+              >
+                {mem ? formatBytes(mem.total) : ''}
+              </td>
               <td className={`${cell} text-right font-mono text-sm text-fg-subtle`}>
                 {ago(w.lastActivityAt ?? w.createdAt)}
               </td>

@@ -1189,6 +1189,49 @@ exec sleep 600
       ),
       [0, -1],
     );
+    // Memory (spec §6.14), measured from the fake claude's processes: the
+    // Memory column with its split, the project's total and the status bar's.
+    const size = String.raw`\d+(\.\d)? (MB|GB)`;
+    await page.waitFor(
+      `[...document.querySelectorAll('[data-memory-cell]')].some((c) => /^${size}$/.test(c.textContent))`,
+      'the Memory column',
+      15_000,
+    );
+    assert.match(
+      await page.eval<string>(
+        `[...document.querySelectorAll('[data-memory-cell]')].find((c) => c.textContent).title`,
+      ),
+      new RegExp(`^Claude ${size}, other ${size}`),
+    );
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-detail=Memory] dd').textContent`),
+      new RegExp(`^${size} · \\d+ sessions?$`),
+    );
+    const memoryTotal = `document.querySelector('footer [data-memory]')`;
+    assert.match(
+      await page.eval<string>(`${memoryTotal}.innerText.replace(/\\s+/g, ' ')`),
+      new RegExp(`^Sessions ${size}$`),
+    );
+    assert.match(
+      await page.eval<string>(`${memoryTotal}.title`),
+      new RegExp(
+        `^Claude sessions and what they started: ${size}\\n.+  ${size} \\(Claude [^]*\\n\\nThis app: ${size}$`,
+      ),
+    );
+    // Not in the sidebar's rows.
+    assert.equal(
+      await page.eval(`/\\d (MB|GB)\\b/.test(document.querySelector('nav').innerText)`),
+      false,
+    );
+    // The column sorts: largest first, smallest first, then as listed.
+    const memorySort = `document.querySelector('[data-sort-memory]').closest('th').getAttribute('aria-sort')`;
+    for (const expected of ['descending', 'ascending', null]) {
+      await page.eval(`document.querySelector('[data-sort-memory]').click()`);
+      await page.waitFor(
+        `${memorySort} === ${JSON.stringify(expected)}`,
+        `memory sort ${expected}`,
+      );
+    }
     await page.eval(`document.querySelector('[data-workspace-row]').focus()`);
     await pressKey(page, 'ArrowDown');
     const secondRow = await page.eval<string>(`document.activeElement.dataset.workspaceRow`);
