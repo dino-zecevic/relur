@@ -104,6 +104,8 @@ export interface LookupRequest {
   projectId: string | null;
   taskId: string;
   lookup: TaskLookup;
+  /** New workspace's: a title found before for this profile and id is used again. */
+  remember?: boolean;
 }
 
 /** Claude's own account of a print-mode run: its time, the API's share and its turns. */
@@ -124,6 +126,8 @@ function claudeStats(stdout: string): string | null {
  */
 export class TaskLookupService {
   private readonly running = new Map<string, () => void>();
+  /** Titles New workspace found, per profile and id, for the app's run (spec §13.7). */
+  private readonly titles = new Map<string, string>();
 
   constructor(
     private readonly context: (
@@ -136,6 +140,12 @@ export class TaskLookupService {
 
   async run(request: LookupRequest): Promise<LookupResult> {
     const timer = new PhaseTimer(this.log, `lookup ${request.taskId} (${request.profileId})`);
+    const key = `${request.profileId}\n${request.taskId}`;
+    const known = request.remember ? this.titles.get(key) : undefined;
+    if (known !== undefined) {
+      timer.note('remembered');
+      return { ok: true, title: known };
+    }
     // A Stop before the process runs (while its environment is read) is kept for it.
     const stop = { stopped: false };
     this.running.set(request.requestId, () => {
@@ -147,6 +157,7 @@ export class TaskLookupService {
     } finally {
       this.running.delete(request.requestId);
     }
+    if (result.ok && request.remember) this.titles.set(key, result.title);
     timer.note(
       result.ok ? 'found' : `${result.notFound ? 'not found' : 'failed'}: ${result.message}`,
     );
@@ -207,6 +218,13 @@ export class TaskLookupService {
     }
     const title = cleanTitle(exited.stdout, taskId);
     return title ? { ok: true, title } : lookupNotFound('The lookup printed nothing');
+  }
+
+  /** Forgets a profile's titles, when its lookup changed. */
+  forget(profileId: string): void {
+    for (const key of this.titles.keys()) {
+      if (key.startsWith(`${profileId}\n`)) this.titles.delete(key);
+    }
   }
 
   cancel(requestId: string): void {

@@ -95,6 +95,35 @@ describe('TaskLookupService', () => {
     expect(await run('FAKE-3', prompt)).toMatchObject({ ok: false, message: /exit 1/ });
   });
 
+  it("remembers New workspace's found titles per profile and id, until forgotten", async () => {
+    const counter = path.join(root, 'count');
+    script('tracker', `echo x >> "${counter}"; [ "$1" = "FAKE-1" ] && echo "Fix the login"`);
+    const tracker = { kind: 'command' as const, command: 'tracker {id}', timeoutSec: 10 };
+    const ask = (taskId: string, profileId = 'p', remember = true) =>
+      service.run({
+        requestId: taskId,
+        profileId,
+        projectId: null,
+        taskId,
+        lookup: tracker,
+        remember,
+      });
+    const count = () => fs.readFileSync(counter, 'utf8').trim().split('\n').length;
+    expect(await ask('FAKE-1')).toEqual({ ok: true, title: 'Fix the login' });
+    expect(await ask('FAKE-1')).toEqual({ ok: true, title: 'Fix the login' });
+    expect(count()).toBe(1);
+    // Not for another profile, Test (without remember), or what wasn't found.
+    await ask('FAKE-1', 'q');
+    await ask('FAKE-1', 'p', false);
+    await ask('FAKE-9');
+    await ask('FAKE-9');
+    expect(count()).toBe(5);
+    service.forget('p');
+    await ask('FAKE-1');
+    expect(count()).toBe(6);
+    expect(fs.readFileSync(log.file, 'utf8')).toMatch(/: remembered$/m);
+  });
+
   it('keeps a Cancel that comes before the process runs', async () => {
     let release: () => void = () => {};
     const slowContext = new TaskLookupService(async () => {

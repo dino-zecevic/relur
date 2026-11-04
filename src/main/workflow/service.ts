@@ -304,7 +304,8 @@ export class WorkflowService {
       this.config.get().config?.profiles.find((p) => p.id === options.profileId)?.taskLookup;
     if (!lookup) return lookupFailed('No task lookup is set up');
     if (!this.lookups) return lookupFailed('Task lookups are not available');
-    return this.lookups.run({ ...options, lookup });
+    // New workspace's (no lookup given) remember found titles; Test always asks.
+    return this.lookups.run({ ...options, lookup, remember: options.lookup === null });
   }
 
   cancelLookup(requestId: string): void {
@@ -313,6 +314,7 @@ export class WorkflowService {
 
   /** Edit profile › Workflow (spec §13.4): null removes it. A lookup kept in it moves out. */
   saveProfile(profileId: string, workflow: Workflow | null): void {
+    this.lookups?.forget(profileId);
     this.config.update((raw) => {
       const profile = rawEntry(raw.profiles, profileId, 'profile');
       liftRawLookup(profile);
@@ -323,6 +325,7 @@ export class WorkflowService {
 
   /** Edit profile › Task lookup (spec §13.7): null removes it. */
   saveLookup(profileId: string, lookup: TaskLookup | null): void {
+    this.lookups?.forget(profileId);
     this.config.update((raw) => {
       const profile = rawEntry(raw.profiles, profileId, 'profile');
       liftRawLookup(profile);

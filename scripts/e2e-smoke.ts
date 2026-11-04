@@ -3338,6 +3338,27 @@ exec sleep 600
       path.basename((await claudeRun(runsBeforeTyped)).split('\n')[0] as string),
       'FAKE-7-tidy-the-cart',
     );
+    // A title found before is remembered for the app's run (spec §13.7): the
+    // same id again gets it without another lookup.
+    await clickLabel(page, 'New workspace in shop');
+    await page.waitFor(
+      `!!document.querySelector('dialog[open] #ws-task')`,
+      'the dialog for FAKE-7 again',
+    );
+    await typeInField(page, '#ws-task', 'FAKE-7', false);
+    await page.waitFor(`${titlePreview} === 'Tidy the cart'`, 'the remembered title');
+    const runsBeforeAgain = runs();
+    await submitDialog(page);
+    await page.waitFor(`!document.querySelector('dialog #ws-task')`, 'the second FAKE-7 workspace');
+    assert.equal(
+      path.basename((await claudeRun(runsBeforeAgain)).split('\n')[0] as string),
+      'FAKE-7-tidy-the-cart-2',
+    );
+    assert.equal(lookups().filter((id) => id === 'FAKE-7').length, 1, 'remembered, not looked up');
+    assert.match(
+      fs.readFileSync(path.join(path.dirname(configFile), 'app.log'), 'utf8'),
+      / lookup FAKE-7 \(\S+\): remembered$/m,
+    );
     await clickLabel(page, 'New workspace in shop');
     await page.waitFor(
       `!!document.querySelector('dialog[open] #ws-task')`,
