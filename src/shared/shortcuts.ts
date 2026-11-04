@@ -189,6 +189,17 @@ export const SHORTCUTS = {
     chords: [{ ctrl: true, shift: true, code: 'KeyV' }],
     platform: 'other',
   },
+  terminalNewline: {
+    group: 'Tabs and terminals',
+    label: 'New line in a terminal (Claude takes it as a new line in the prompt)',
+    chords: [{ shift: true, code: 'Enter' }],
+  },
+  terminalDeleteLine: {
+    group: 'Tabs and terminals',
+    label: 'Delete to the start of the line in a terminal',
+    chords: [{ mod: true, code: 'Backspace' }],
+    platform: 'mac',
+  },
 
   promptStep: {
     group: 'Claude',
@@ -259,6 +270,7 @@ const KEY_NAMES: Record<string, [mac: string, other: string]> = {
   ArrowLeft: ['←', 'Left'],
   ArrowRight: ['→', 'Right'],
   Enter: ['↵', 'Enter'],
+  Backspace: ['⌫', 'Backspace'],
   Escape: ['Esc', 'Esc'],
   Tab: ['Tab', 'Tab'],
   Slash: ['/', '/'],

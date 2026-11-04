@@ -554,6 +554,8 @@ Every built shortcut is defined once in `src/shared/shortcuts.ts` (key handlers,
 | Close window (macOS) | ⇧⌘W |
 | Restart Claude in an exited Claude tab | ↵ |
 | Move terminal tab *(M5)* | ⌘⇧[ / ⌘⇧] |
+| New line in a terminal (Claude's prompt) | ⇧↵ |
+| Delete to the start of the line in a terminal (macOS) | ⌘⌫ |
 | Previous / next prompt | ⌘↑ / ⌘↓ |
 | Copy the last response | ⌥C |
 | Responses panel | ⇧⌘R |

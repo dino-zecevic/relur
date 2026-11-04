@@ -210,6 +210,18 @@ export function TerminalView({
         event.preventDefault();
         return false;
       }
+      // xterm sends ⇧↵ as a plain ↵; ESC ↵ is the new line Claude Code reads (spec §6.3).
+      if (matchShortcut('terminalNewline', event, isMac) !== -1) {
+        if (event.type === 'keydown') term.input('\x1b\r');
+        event.preventDefault();
+        return false;
+      }
+      // ⌘⌫ deletes to the start of the line, as ⌃U, like other macOS terminals (spec §6.3).
+      if (matchShortcut('terminalDeleteLine', event, isMac) !== -1) {
+        if (event.type === 'keydown') term.input('\x15');
+        event.preventDefault();
+        return false;
+      }
       // Copy and paste on Linux and Windows, where Ctrl+C and Ctrl+V belong to the terminal.
       if (event.type !== 'keydown') return true;
       if (matchShortcut('terminalCopy', event, isMac) !== -1) copy();

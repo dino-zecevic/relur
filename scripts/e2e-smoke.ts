@@ -134,6 +134,37 @@ process.stdin.on('data', (data) => {
 }
 
 /**
+ * Whether ⇧↵ reaches a program as ESC ↵, Claude Code's new line, and on macOS
+ * ⌘⌫ as ⌃U (spec §6.3).
+ */
+async function checkTerminalKeys(page: Cdp, home: string) {
+  // Records its input in raw mode until a carriage return arrives.
+  fs.writeFileSync(
+    path.join(home, 'newline.js'),
+    `const fs = require('node:fs');
+process.stdin.setRawMode(true);
+let input = '';
+process.stdin.on('data', (data) => {
+  input += data;
+  if (!input.includes('\\r')) return;
+  fs.writeFileSync(process.env.HOME + '/newline.txt', JSON.stringify(input));
+  process.exit(0);
+});
+fs.writeFileSync(process.env.HOME + '/newline-ready.txt', 'ready');
+`,
+  );
+  await typeInTerminal(page, 'node ~/newline.js');
+  await waitForFile(path.join(home, 'newline-ready.txt'));
+  const mac = process.platform === 'darwin';
+  if (mac) await pressKey(page, 'Backspace', MOD.meta);
+  await pressKey(page, 'Enter', MOD.shift);
+  assert.equal(
+    JSON.parse(await waitForFile(path.join(home, 'newline.txt'))),
+    mac ? '\x15\x1b\r' : '\x1b\r',
+  );
+}
+
+/**
  * An OSC 8 hyperlink (as Claude Code prints them) opens through the main
  * process, without xterm's confirm() dialog.
  */
@@ -414,6 +445,7 @@ exec sleep 600
     console.log(`terminal renderer: ${renderer}`);
     if (process.platform === 'darwin') assert.equal(renderer, 'webgl');
     await checkMouseWheel(page, fx.root);
+    await checkTerminalKeys(page, fx.root);
     await checkHyperlink(page, mainProcess, fx.root);
 
     // Add project with Browse…: the main checkout is found from a subfolder.

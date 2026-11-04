@@ -460,6 +460,7 @@ const KEYS: Record<string, { key: string; vk: number }> = {
   Tab: { key: 'Tab', vk: 9 },
   Escape: { key: 'Escape', vk: 27 },
   Enter: { key: 'Enter', vk: 13 },
+  Backspace: { key: 'Backspace', vk: 8 },
   Slash: { key: '/', vk: 191 },
   Period: { key: '.', vk: 190 },
   BracketLeft: { key: '[', vk: 219 },

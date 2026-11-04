@@ -367,6 +367,8 @@ Committing, pushing and Create PR are in the Changes panel (§14.1). A task link
 - v1 uses tabs only; split panes come later.
 - The tab bar's right side holds the workspace's view buttons: Responses, Open in editor and Changes (§6.2).
 - Full xterm compatibility for Claude Code's interface (colors, mouse, bracketed paste) and clickable URLs. Scrollback search and clickable file paths aren't built yet.
+- **New line:** xterm sends ⇧↵ as a plain ↵, which Claude Code can't tell from Enter. Every terminal sends ⇧↵ as ESC ↵ instead, the sequence Claude Code reads as a new line in the prompt (as Option+Enter in terminals that send it), so ⇧↵ works without `/terminal-setup`. Shells and other programs read ESC ↵ as Alt+Enter.
+- **Delete line (macOS):** ⌘⌫ sends ⌃U, as other macOS terminals do: Claude Code's prompt and shells delete from the cursor to the start of the line. Linux and Windows keep Ctrl+Backspace for the terminal.
 - **Full redraw:** a terminal draws every row again from its buffer, and rebuilds its WebGL glyph atlas, when it is shown (once its replay is written, and again when it gets a size after being hidden), after it is resized, after a theme change and after its WebGL context is lost (it then uses the DOM renderer). Each view has its own xterm, disposed when it goes, so prompt markers and gutter numbers (§6.8) belong to their own terminal only. The redraw is a precaution: content left from another terminal after switching was reported but not reproduced. **Tests:** `scripts/e2e-terminals.ts` switches between two workspaces with different prompt markers and the project view, quickly, in a wide and a narrow window and in Claude's full-screen mode, and checks after each switch that the page has one terminal, that every marker shown is its own, and that it was redrawn; a resize and a theme change redraw it too.
 - **Links:** plain URLs and OSC 8 hyperlinks (which Claude Code prints) open in the browser through the main process, http and https only, without xterm's confirmation dialog; anything else is ignored.
 - **Launch spinner:** while Claude launches (until its first output, at most about 3 seconds), its tab and the workspace's rows show the Working spinner. After that a workspace still in Starting shows no glyph until hooks report its state (§10.2).
@@ -421,6 +423,8 @@ The main table below lists the macOS keys.
 | ⌘T | New Shell tab | M0 |
 | ⌘W | Close terminal tab (Claude asks first; the home terminal stays). Close Window is ⇧⌘W | M1 |
 | ⌘⇧[ / ⌘⇧] | Move terminal tab | M5 |
+| ⇧↵ | New line in a terminal: Claude's prompt takes a new line (§6.3) | — |
+| ⌘⌫ | Delete to the start of the line in a terminal (macOS, §6.3) | — |
 | ⌘↑ / ⌘↓ | Previous / next prompt (§6.8) | M1 |
 | ⌥C | Copy the last response (§6.8) | M1 |
 | ⇧⌘R | Show or hide the Responses panel (§6.8) | M1 |

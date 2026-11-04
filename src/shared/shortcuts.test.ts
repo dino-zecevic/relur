@@ -40,6 +40,12 @@ describe('shortcuts', () => {
     expect(matchShortcut('newWorkspace', key('KeyN', { meta: true, shift: true }), true)).toBe(-1);
     expect(matchShortcut('workspaceStep', key('ArrowDown', { alt: true }), true)).toBe(1);
     expect(matchShortcut('cycleTabs', key('Tab', { ctrl: true, shift: true }), true)).toBe(1);
+    expect(matchShortcut('terminalNewline', key('Enter', { shift: true }), true)).toBe(0);
+    expect(matchShortcut('terminalNewline', key('Enter', { shift: true }), false)).toBe(0);
+    expect(matchShortcut('terminalNewline', key('Enter'), true)).toBe(-1);
+    expect(matchShortcut('terminalDeleteLine', key('Backspace', { meta: true }), true)).toBe(0);
+    expect(matchShortcut('terminalDeleteLine', key('Backspace', { ctrl: true }), false)).toBe(-1);
+    expect(formatShortcut(SHORTCUTS.terminalDeleteLine, true)).toBe('⌘⌫');
   });
 
   it('gives the digit of a range, and keeps platform-only keys to their platform', () => {
