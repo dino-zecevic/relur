@@ -37,10 +37,10 @@ import { type GuideTarget, GuideView, target } from './guide/GuideView';
 import { GuideContext } from './guide/link';
 import { trpcClient, useTRPC } from './trpc';
 import { button, iconButton, isMac, Kbd } from './ui/controls';
-import { LaunchingContext } from './ui/launching';
 import { requestOnOpen } from './ui/open-requests';
 import { useProjectDisclosure } from './ui/project-disclosure';
 import { playAlert } from './ui/sounds';
+import { SessionMarks } from './ui/suspended';
 import { useNativeTheme } from './ui/theme';
 import {
   type AfterSetup,
@@ -418,6 +418,12 @@ export function App() {
       s.kind === 'claude' && s.launching && s.workspaceId ? [s.workspaceId] : [],
     ),
   );
+  // Workspaces whose Claude is suspended show the mark (spec §9.8).
+  const suspended = new Set(
+    (sessions.data ?? []).flatMap((s) =>
+      s.kind === 'claude' && s.status === 'suspended' && s.workspaceId ? [s.workspaceId] : [],
+    ),
+  );
   const ready =
     info.isSuccess &&
     config.isSuccess &&
@@ -439,12 +445,18 @@ export function App() {
   const shownSession =
     viewSessions.find((s) => s.id === selectedTab[tabKey]) ?? viewSessions[0] ?? null;
   const claudeTabShown = Boolean(workspace && shownSession?.kind === 'claude');
+  // A main checkout's Claude tab, shown in a project view, isn't suspended (spec §9.8).
+  const shownSessionId = !workspace && projectTab === shownSession?.id ? shownSession.id : null;
   const setVisible = useMutation(trpc.status.setVisible.mutationOptions());
   const markRead = useMutation(trpc.status.markRead.mutationOptions());
   // biome-ignore lint/correctness/useExhaustiveDependencies: report changes only
   useEffect(() => {
-    setVisible.mutate({ workspaceId: visibleWorkspace, claudeTab: claudeTabShown });
-  }, [visibleWorkspace, claudeTabShown]);
+    setVisible.mutate({
+      workspaceId: visibleWorkspace,
+      claudeTab: claudeTabShown,
+      sessionId: shownSessionId,
+    });
+  }, [visibleWorkspace, claudeTabShown, shownSessionId]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: clear once per unread
   useEffect(() => {
     if (workspace?.unread) markRead.mutate({ workspaceId: workspace.id });
@@ -666,7 +678,7 @@ export function App() {
 
   return (
     // data-app-ready marks a completed round trip to the main process (--self-test waits for it).
-    <LaunchingContext value={launching}>
+    <SessionMarks launching={launching} suspended={suspended}>
       <GuideContext value={openGuide}>
         <div data-app-ready={ready || undefined} className="flex h-full flex-col bg-chrome text-fg">
           <ProfileTabs
@@ -902,6 +914,10 @@ export function App() {
             notice={keyNotice}
             workspaces={profileWorkspaces}
             memory={memory.data ?? null}
+            suspendedSessions={
+              (sessions.data ?? []).filter((s) => s.kind === 'claude' && s.status === 'suspended')
+                .length
+            }
           />
 
           {editingProfile && profiles.some((p) => p.id === editingProfile) ? (
@@ -1103,7 +1119,7 @@ export function App() {
           ) : null}
         </div>
       </GuideContext>
-    </LaunchingContext>
+    </SessionMarks>
   );
 }
 

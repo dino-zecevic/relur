@@ -29,6 +29,7 @@ export function StatusBar({
   notice,
   workspaces,
   memory,
+  suspendedSessions = 0,
 }: {
   profile: Profile | null;
   location: string;
@@ -43,6 +44,8 @@ export function StatusBar({
   workspaces: Workspace[];
   /** Memory of every Claude session and the app (spec §6.14); null before the first measurement. */
   memory: MemorySnapshot | null;
+  /** Claude sessions suspended to save memory, in every profile (spec §9.8). */
+  suspendedSessions?: number;
 }) {
   const trpc = useTRPC();
   const diagnostics = useQuery(trpc.env.diagnostics.queryOptions());
@@ -116,7 +119,7 @@ export function StatusBar({
             {waiting} needs you
           </span>
         ) : null}
-        {memory ? <MemoryStatus memory={memory} /> : null}
+        {memory ? <MemoryStatus memory={memory} suspended={suspendedSessions} /> : null}
         {profile && usage.show ? (
           <>
             <UsageMeter usage={usage.snapshot} />

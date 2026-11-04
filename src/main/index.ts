@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { BRAND, envVar } from '@shared/brand';
+import type { SessionInfo } from '@shared/terminal-protocol';
 import { planLimitReached } from '@shared/unfinished';
 import { LATEST_RELEASE_URL } from '@shared/updates';
 import { parseRateLimits } from '@shared/usage';
@@ -46,6 +47,7 @@ import { SetupService } from './setup/service';
 import { SkillService } from './skills/service';
 import { ElectronStatusPlatform } from './status/electron';
 import { StatusService } from './status/service';
+import { SuspendService } from './suspend/service';
 import { serveTrpcOverIpc } from './trpc/electron';
 import { UnfinishedService } from './unfinished/service';
 import { startUpdate } from './updates/install';
@@ -136,6 +138,8 @@ let unfinished: UnfinishedService | null = null;
 let statusPlatform: ElectronStatusPlatform | null = null;
 /** Memory of Claude sessions and the app (spec §6.14); set once the app is ready. */
 let memory: MemoryMonitor | null = null;
+/** Suspends idle Claude sessions and resumes them when shown (spec §9.8). */
+let suspender: SuspendService | null = null;
 /** The quit dialog in the window (spec §5): asked with the busy session ids. */
 const quitAsker = new EventEmitter();
 let answerQuit: ((quit: boolean) => void) | null = null;
@@ -201,6 +205,9 @@ function showMainWindow(): void {
   // Memory is measured only while the window is visible, and at once when it shows (spec §6.14).
   win.on('show', () => void memory?.refresh());
   win.on('restore', () => void memory?.refresh());
+  // A window that shows again resumes the suspended Claude it shows (spec §9.8).
+  win.on('show', () => suspender?.checkShown());
+  win.on('restore', () => suspender?.checkShown());
   win.on('close', (event) => onWindowClose(win, event));
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
@@ -469,14 +476,11 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       withTui(claudeSettings({ ...settingsOptions, askBeforeLink: true })),
       'settings-ask-link.json',
     );
-    const workspaces = new WorkspaceService(
-      config,
-      env,
-      workspaceRecords,
-      terminals,
-      (profileId) =>
-        env?.profile(profileId).claude.askBeforeLink === false ? plainSettings : askLinkSettings,
-    );
+    const settingsFor = (profileId: string) =>
+      env?.profile(profileId).claude.askBeforeLink === false ? plainSettings : askLinkSettings;
+    const workspaces = new WorkspaceService(config, env, workspaceRecords, terminals, settingsFor);
+    // A main checkout's Claude gets the hooks too, so it can be suspended (spec §9.8).
+    terminals.claudeSettings = settingsFor;
     // Create's and the task lookup's phases, timed (spec §3.4).
     const appLog = new AppLog(path.join(dataDir, APP_LOG_FILE));
     workspaces.log = appLog;
@@ -512,10 +516,18 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       claudeRunning: runningClaude,
       startClaude: (workspaceId) => workspaces.startClaude(workspaceId),
       send: (workspaceId, prompt) => terminals.sendToClaude(workspaceId, prompt),
-      onSpawn: (listener) =>
-        host.onSpawn((info) => {
+      // A suspended Claude's resume counts as its start (spec §9.8).
+      onSpawn: (listener) => {
+        const started = (info: SessionInfo) => {
           if (info.kind === 'claude' && info.workspaceId) listener(info.workspaceId);
-        }),
+        };
+        const offSpawn = host.onSpawn(started);
+        const offResume = host.onResume(started);
+        return () => {
+          offSpawn();
+          offResume();
+        };
+      },
       onSessionStart: (listener) => status?.onSessionStart(listener) ?? (() => {}),
     });
     unfinished = continuing;
@@ -537,12 +549,43 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     });
     memory = monitor;
     host.onExit(() => monitor.sessionsChanged());
+    // A suspended session leaves the numbers at once (spec §9.8).
+    host.onSuspend(() => monitor.sessionsChanged());
     // A new session shows in the counts within a moment, not at the next measurement.
-    host.onSpawn((info) => {
+    const measureSoon = (info: SessionInfo) => {
       if (info.kind === 'claude') setTimeout(() => void monitor.refresh(), 1_000);
-    });
+    };
+    host.onSpawn(measureSoon);
+    host.onResume(measureSoon);
     monitor.start();
     atShutdown(() => monitor.stop());
+    // Suspending idle sessions (spec §9.8). A shorter minute is for the e2e tests only.
+    const minuteOverride = Number(process.env[envVar('SUSPEND_MINUTE_MS')]);
+    const platform = statusPlatform;
+    const suspend = new SuspendService({
+      host,
+      delayMin: (profileId) =>
+        config.get().config?.profiles.find((p) => p.id === profileId)?.suspendIdleMin ?? null,
+      workspace: (workspaceId) => workspaceRecords.get(workspaceId),
+      mainCheckoutKept: (projectId) => workspaceRecords.keptMainCheckouts().includes(projectId),
+      shown: () => platform.shown(),
+      resume: (info) =>
+        info.workspaceId
+          ? workspaces.startClaude(info.workspaceId)
+          : terminals.resumeClaudeInProject(info.id, suspend.restoreArgs(info.id)),
+      followMainClaude: (sessionId, claudeId) => terminals.followMainClaude(sessionId, claudeId),
+      ...(minuteOverride > 0 ? { minuteMs: minuteOverride } : {}),
+    });
+    suspender = suspend;
+    bridge.onHook((message) => suspend.handleHook(message));
+    bridge.onStatusLine((message) => suspend.handleStatusLine(message));
+    terminals.wake = (info) => suspend.wake(info);
+    workspaces.suspendAtStart = (profileId) =>
+      config.get().config?.profiles.find((p) => p.id === profileId)?.suspendIdleMin != null;
+    workspaces.restoreArgs = (sessionId) => suspend.restoreArgs(sessionId);
+    platform.onShown(() => suspend.checkShown());
+    suspend.start();
+    atShutdown(() => suspend.stop());
     workspaces.adoptPrefill = (projectId, worktree, branch) =>
       workflow.prefill(projectId, worktree, branch);
     // Worktrees made outside the app, by a skill or by hand (spec §13.6).
@@ -638,7 +681,8 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     updates.start();
     // Claude resumes where it ran (spec §9.4); then interrupted work is
     // continued or asked about (§9.7).
-    void continuing.atLaunch(workspaces.resumeAtLaunch());
+    // With suspension on, the rest start suspended; the shown one resumes (§9.8).
+    void continuing.atLaunch(workspaces.resumeAtLaunch().then(() => suspender?.checkShown()));
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) showMainWindow();
     });

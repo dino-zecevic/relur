@@ -154,6 +154,7 @@ describe('WorkflowService with the status service', () => {
     background: 0,
     unfinished: null,
     lastPrompt: null,
+    keepRunning: false,
     stateSince: null,
     claudeSessionId: null,
     ports: null,
@@ -188,7 +189,9 @@ describe('WorkflowService with the status service', () => {
     records.insert({ ...base, worktreePath: worktree });
     sent = [];
     service = new WorkflowService(config, records, {
-      sendToClaude: (_id, prompt) => sent.push(prompt),
+      sendToClaude: (_id, prompt) => {
+        sent.push(prompt);
+      },
     });
     host = new SessionHost({ killTimeoutMs: 300 });
     notified = [];

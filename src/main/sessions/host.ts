@@ -34,6 +34,8 @@ export interface SpawnOptions {
   profileId: string;
   projectId?: string | null;
   workspaceId?: string | null;
+  /** The session's id, when the caller chose it before the spawn (its env names it, spec §9.2). */
+  id?: string;
 }
 
 export interface SessionHostOptions {
@@ -49,7 +51,10 @@ export interface SessionHostOptions {
 
 interface Session {
   info: SessionInfo;
-  pty: pty.IPty;
+  /** Null for a Claude session that starts suspended (spec §9.8) until it is resumed. */
+  pty: pty.IPty | null;
+  /** Its process runs; a stopped one's pid may be reused, so it is never signalled. */
+  alive: boolean;
   /** Process name of the program the session started (the shell, for shell kinds). */
   program: string;
   scrollback: Scrollback;
@@ -99,6 +104,132 @@ export class SessionHost {
 
   spawn(options: SpawnOptions): SessionInfo {
     if (this.closed) throw new Error('Quitting: no new terminal sessions start');
+    const session = this.newSession(options, 'running');
+    this.launch(session, options);
+    this.sessions.set(session.info.id, session);
+    this.events.emit('spawn', session.info);
+    this.changed();
+    return session.info;
+  }
+
+  /**
+   * A Claude session that starts suspended (spec §9.8): it is listed and shown,
+   * without a process, until it is resumed.
+   */
+  addSuspended(options: Omit<SpawnOptions, 'command' | 'args' | 'env'>): SessionInfo {
+    if (this.closed) throw new Error('Quitting: no new terminal sessions start');
+    const session = this.newSession(options, 'suspended');
+    session.info = { ...session.info, launching: false };
+    this.sessions.set(session.info.id, session);
+    this.changed();
+    return session.info;
+  }
+
+  /**
+   * Suspends a running Claude session (spec §9.8): its process group is
+   * stopped as at §9.5, while the session stays, with its views, as
+   * `suspended`. Its exit isn't reported (no `exit` event, nothing to views);
+   * `suspend` listeners hear of it at once.
+   */
+  async suspend(id: string): Promise<void> {
+    const session = this.session(id);
+    if (session.info.kind !== 'claude' || session.info.status !== 'running') return;
+    session.info = { ...session.info, status: 'suspended', launching: false, resuming: false };
+    this.events.emit('suspend', session.info);
+    this.changed();
+    await this.stop(id);
+  }
+
+  /**
+   * Resumes a suspended Claude session with a new process (spec §9.8), in the
+   * same session: same id, views attach again (`generation`), and the output
+   * starts afresh, as Claude prints the conversation again. Input stays
+   * blocked until `ready`.
+   */
+  async resume(id: string, options: SpawnOptions): Promise<SessionInfo> {
+    const session = this.session(id);
+    if (session.info.status !== 'suspended') return session.info;
+    // A suspend still under way finishes first.
+    await session.exited;
+    if (this.closed) throw new Error('Quitting: no new terminal sessions start');
+    if (session.info.status !== 'suspended') return session.info;
+    if (session.flushTimer) clearTimeout(session.flushTimer);
+    session.flushTimer = null;
+    session.pending = '';
+    session.scrollback = new Scrollback(this.scrollbackSize);
+    session.marks = [];
+    for (const sink of session.sinks) sink.close();
+    session.sinks.clear();
+    session.info = {
+      ...session.info,
+      status: 'running',
+      exitCode: null,
+      signal: null,
+      launching: false,
+      resuming: true,
+      generation: session.info.generation + 1,
+    };
+    this.launch(session, options);
+    this.events.emit('resume', session.info);
+    this.changed();
+    return session.info;
+  }
+
+  /**
+   * A suspended Claude that couldn't be resumed (spec §9.8) ends as if it had
+   * exited, so its view offers to start it again.
+   */
+  endSuspended(id: string): void {
+    const session = this.sessions.get(id);
+    if (session?.info.status !== 'suspended' || this.closed) return;
+    session.info = { ...session.info, status: 'exited', resuming: false };
+    for (const sink of session.sinks) sink.send({ type: 'exit', exitCode: null, signal: null });
+    this.events.emit('exit', session.info);
+    this.changed();
+  }
+
+  /** A resumed Claude is ready (spec §9.8): keys reach it again. */
+  ready(id: string): void {
+    const session = this.sessions.get(id);
+    if (!session?.info.resuming) return;
+    session.info = { ...session.info, resuming: false };
+    this.changed();
+  }
+
+  private newSession(
+    options: Omit<SpawnOptions, 'command' | 'args' | 'env'> & { command?: string },
+    status: SessionInfo['status'],
+  ): Session {
+    return {
+      info: {
+        id: options.id ?? randomUUID(),
+        kind: options.kind,
+        title: options.title,
+        cwd: options.cwd,
+        profileId: options.profileId,
+        projectId: options.projectId ?? null,
+        workspaceId: options.workspaceId ?? null,
+        status,
+        exitCode: null,
+        signal: null,
+        launching: options.kind === 'claude',
+        resuming: false,
+        generation: 0,
+      },
+      pty: null,
+      alive: false,
+      program: options.command ? path.basename(options.command) : '',
+      scrollback: new Scrollback(this.scrollbackSize),
+      marks: [],
+      sinks: new Set(),
+      pending: '',
+      flushTimer: null,
+      exited: Promise.resolve(),
+    };
+  }
+
+  /** Starts the session's process; events from an earlier process of it are ignored. */
+  private launch(session: Session, options: SpawnOptions): void {
     const child = pty.spawn(options.command, options.args, {
       name: options.env.TERM ?? 'xterm-256color',
       cols: options.cols ?? 80,
@@ -106,45 +237,27 @@ export class SessionHost {
       cwd: options.cwd,
       env: options.env,
     });
-
+    session.pty = child;
+    session.alive = true;
+    session.program = path.basename(options.command);
     let markExited: () => void = () => {};
-    const session: Session = {
-      info: {
-        id: randomUUID(),
-        kind: options.kind,
-        title: options.title,
-        cwd: options.cwd,
-        profileId: options.profileId,
-        projectId: options.projectId ?? null,
-        workspaceId: options.workspaceId ?? null,
-        status: 'running',
-        exitCode: null,
-        signal: null,
-        launching: options.kind === 'claude',
-      },
-      pty: child,
-      program: path.basename(options.command),
-      scrollback: new Scrollback(this.scrollbackSize),
-      marks: [],
-      sinks: new Set(),
-      pending: '',
-      flushTimer: null,
-      exited: new Promise((resolve) => {
-        markExited = resolve;
-      }),
-    };
+    session.exited = new Promise((resolve) => {
+      markExited = resolve;
+    });
+    const current = () => session.pty === child;
 
     const launched = () => {
       clearTimeout(launchTimer);
-      if (!session.info.launching) return;
+      if (!current() || !session.info.launching) return;
       session.info = { ...session.info, launching: false };
       this.changed();
     };
     const launchTimer = setTimeout(launched, this.launchMs);
 
     child.onData((data) => {
-      // Quitting: the views are going away (spec §5).
-      if (this.closed) return;
+      // Quitting: the views are going away (spec §5). A suspended Claude's last
+      // words (its resume hint) aren't kept either.
+      if (this.closed || !current() || session.info.status !== 'running') return;
       launched();
       session.scrollback.push(data);
       session.pending += data;
@@ -152,6 +265,11 @@ export class SessionHost {
     });
     child.onExit(({ exitCode, signal }) => {
       clearTimeout(launchTimer);
+      if (current()) session.alive = false;
+      markExited();
+      if (!current()) return;
+      // Suspended (spec §9.8): the session stays; nothing is reported.
+      if (session.info.status === 'suspended') return;
       if (session.flushTimer) clearTimeout(session.flushTimer);
       session.info = {
         ...session.info,
@@ -159,8 +277,8 @@ export class SessionHost {
         exitCode,
         signal: signal || null,
         launching: false,
+        resuming: false,
       };
-      markExited();
       // Once quitting, an exit only ends the session: nothing goes to views or
       // listeners that are shutting down (spec §5).
       if (this.closed) return;
@@ -176,11 +294,6 @@ export class SessionHost {
         console.error('terminal exit handling failed', error);
       }
     });
-
-    this.sessions.set(session.info.id, session);
-    this.events.emit('spawn', session.info);
-    this.changed();
-    return session.info;
   }
 
   list(): SessionInfo[] {
@@ -197,9 +310,11 @@ export class SessionHost {
 
   /** Running sessions of a kind with the process id of what they started (spec §6.14). */
   processes(kind: SessionKind): { info: SessionInfo; pid: number }[] {
-    return [...this.sessions.values()]
-      .filter((s) => s.info.kind === kind && s.info.status === 'running')
-      .map((s) => ({ info: s.info, pid: s.pty.pid }));
+    return [...this.sessions.values()].flatMap((s) =>
+      s.info.kind === kind && s.info.status === 'running' && s.pty
+        ? [{ info: s.info, pid: s.pty.pid }]
+        : [],
+    );
   }
 
   runningCount(): number {
@@ -216,7 +331,7 @@ export class SessionHost {
     const { kind } = session.info;
     if (session.info.status !== 'running' || kind === 'claude' || kind === 'setup') return false;
     if (process.platform === 'win32') return true; // TODO(M7): no foreground process name on Windows
-    return foregroundName(session.pty) === session.program;
+    return session.pty !== null && foregroundName(session.pty) === session.program;
   }
 
   /**
@@ -280,9 +395,10 @@ export class SessionHost {
     session.sinks.add(sink);
     return {
       // Once quitting, keys reach neither the session nor the input listeners,
-      // which read state.db (spec §5); nor do they after the session exited.
+      // which read state.db (spec §5); nor do they after the session exited,
+      // while it is suspended, or while it resumes (spec §9.8).
       input: (data) => {
-        if (this.closed || session.info.status !== 'running') return;
+        if (this.closed || session.info.status !== 'running' || session.info.resuming) return;
         this.write(id, data);
         this.events.emit('input', session.info, data);
       },
@@ -304,13 +420,13 @@ export class SessionHost {
 
   write(id: string, data: string): void {
     const session = this.session(id);
-    if (session.info.status !== 'running' || data.length > MAX_INPUT) return;
+    if (session.info.status !== 'running' || !session.pty || data.length > MAX_INPUT) return;
     session.pty.write(data);
   }
 
   resize(id: string, cols: number, rows: number): void {
     const session = this.session(id);
-    if (session.info.status !== 'running') return;
+    if (session.info.status !== 'running' || !session.pty) return;
     session.pty.resize(Math.max(1, Math.floor(cols)), Math.max(1, Math.floor(rows)));
   }
 
@@ -321,7 +437,7 @@ export class SessionHost {
    */
   async stop(id: string): Promise<void> {
     const session = this.session(id);
-    if (session.info.status === 'exited') return;
+    if (session.info.status === 'exited' || !session.alive) return;
     if (session.info.kind !== 'claude') this.signal(session, 'SIGHUP');
     this.signal(session, 'SIGTERM');
     const timer = setTimeout(() => this.signal(session, 'SIGKILL'), this.killTimeoutMs);
@@ -388,6 +504,18 @@ export class SessionHost {
     return () => this.events.off('exit', listener);
   }
 
+  /** A Claude session was suspended (spec §9.8); its process is being stopped. */
+  onSuspend(listener: (info: SessionInfo) => void): () => void {
+    this.events.on('suspend', listener);
+    return () => this.events.off('suspend', listener);
+  }
+
+  /** A suspended Claude session got a new process (spec §9.8). */
+  onResume(listener: (info: SessionInfo) => void): () => void {
+    this.events.on('resume', listener);
+    return () => this.events.off('resume', listener);
+  }
+
   /** The user typed into a session's view (not text the app typed itself). */
   onInput(listener: (info: SessionInfo, data: string) => void): () => void {
     this.events.on('input', listener);
@@ -410,6 +538,7 @@ export class SessionHost {
   }
 
   private signal(session: Session, signal: NodeJS.Signals): void {
+    if (!session.pty || !session.alive) return;
     if (process.platform === 'win32') {
       // TODO(M7): terminate the whole process tree on Windows (spec §9.5).
       session.pty.kill();
@@ -420,7 +549,7 @@ export class SessionHost {
       process.kill(-session.pty.pid, signal);
     } catch {
       try {
-        session.pty.kill(signal);
+        session.pty?.kill(signal);
       } catch {
         // already gone
       }

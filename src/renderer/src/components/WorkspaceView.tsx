@@ -322,7 +322,8 @@ export function WorkspaceView({
     window.addEventListener(FOCUS_CLAUDE_EVENT, focus);
     return () => window.removeEventListener(FOCUS_CLAUDE_EVENT, focus);
   }, [workspace.id]);
-  const claudeRunning = sessions.some((s) => s.kind === 'claude' && s.status === 'running');
+  // A suspended Claude counts: opening the workspace resumes it (spec §9.8).
+  const claudeRunning = sessions.some((s) => s.kind === 'claude' && s.status !== 'exited');
   const setupRunning = sessions.some((s) => s.kind === 'setup' && s.status === 'running');
   const failedRepos = workspace.repos.filter((r) => r.setupError);
   // Until Claude takes over (Start Claude anyway); the chips keep showing which failed.
@@ -348,9 +349,7 @@ export function WorkspaceView({
       .filter((s) => s.kind === 'claude')
       .map((s) => [
         s.id,
-        s.status === 'running'
-          ? glyphFor(workspace.state, workspace.unread, s.launching)
-          : 'exited',
+        s.status !== 'exited' ? glyphFor(workspace.state, workspace.unread, s.launching) : 'exited',
       ]),
   );
   // ⌘R is Retry while setup has failed (spec §6.6); F5 on Linux and Windows, which a focused
@@ -519,7 +518,7 @@ export function WorkspaceView({
               workspaceId={workspace.id}
               workflow={workspace.workflow}
               state={workspace.state}
-              claudeRunning={sessions.some((s) => s.kind === 'claude' && s.status === 'running')}
+              claudeRunning={sessions.some((s) => s.kind === 'claude' && s.status !== 'exited')}
               onReview={() => setDocShown(true)}
             />
           </div>
@@ -731,8 +730,9 @@ export function WorkspaceView({
             />
           ) : active ? (
             <TerminalView
-              key={active.id}
+              key={`${active.id}:${active.generation}`}
               sessionId={active.id}
+              resuming={active.status === 'suspended' || active.resuming}
               conversation={
                 active.kind === 'claude'
                   ? { workspaceId: workspace.id, onState: onNavigator, onAids: setAids }

@@ -3,6 +3,7 @@ import type { ProfileColor } from '@shared/profile-colors';
 import type { Profile } from '@shared/schemas';
 import { accountFolder, setupPassed, setupWarning } from '@shared/setup';
 import { SOUND_EVENTS } from '@shared/status';
+import { SUSPEND_CHOICES, type SuspendChoice } from '@shared/suspend';
 import { resumePrompt } from '@shared/unfinished';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
@@ -58,6 +59,9 @@ export function EditProfileDialog({
   const [doNotDisturb, setDoNotDisturb] = useState(profile.alerts.doNotDisturb);
   const [continueAtStart, setContinueAtStart] = useState(profile.resume.continueAtStart);
   const [continuePrompt, setContinuePrompt] = useState(resumePrompt(profile.resume));
+  const [suspendIdleMin, setSuspendIdleMin] = useState<SuspendChoice | null>(
+    profile.suspendIdleMin ?? null,
+  );
   const [statusLine, setStatusLine] = useState(profile.claude.statusLine ?? '');
   const [askBeforeLink, setAskBeforeLink] = useState(profile.claude.askBeforeLink);
   const [editor, setEditor] = useState<EditorDraft>(draftOf(profile.editor));
@@ -104,6 +108,7 @@ export function EditProfileDialog({
       git: commitName.trim() || commitEmail.trim() ? { commitName, commitEmail } : null,
       pr: { createCommand: prCreate, statusCommand: prStatus },
       resume: { continueAtStart, prompt: continuePrompt },
+      suspendIdleMin,
     });
   };
 
@@ -339,6 +344,36 @@ export function EditProfileDialog({
               few seconds apart and never while plan usage is at its limit. Work you interrupted
               with Esc, and permission requests, are never continued by themselves. Off: you're
               asked when {BRAND.displayName} starts.
+            </p>
+          </div>
+          <div data-suspend-settings>
+            <label className={labelClass} htmlFor="edit-profile-suspend">
+              Suspend idle sessions
+            </label>
+            <div className="flex items-center gap-2">
+              <select
+                id="edit-profile-suspend"
+                className={`${inputClass} w-auto`}
+                value={suspendIdleMin ?? 'off'}
+                onChange={(e) =>
+                  setSuspendIdleMin(
+                    e.target.value === 'off' ? null : (Number(e.target.value) as SuspendChoice),
+                  )
+                }
+              >
+                <option value="off">Off</option>
+                {SUSPEND_CHOICES.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    After {minutes} minutes
+                  </option>
+                ))}
+              </select>
+              <GuideLink to="suspend" label="Suspending idle sessions" before={onClose} />
+            </div>
+            <p className="mt-1 text-sm text-fg-subtle">
+              Stops Claude, and everything it started, in workspaces you aren't looking at once it
+              has been idle that long, to save memory. Opening the workspace resumes the
+              conversation.
             </p>
           </div>
           <div>

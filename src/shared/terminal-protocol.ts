@@ -45,12 +45,23 @@ export interface SessionInfo {
   profileId: string;
   projectId: string | null;
   workspaceId: string | null;
-  status: 'running' | 'exited';
+  /**
+   * `suspended`: Claude only, its process stopped to save memory while the
+   * session stays, to be resumed (spec §9.8).
+   */
+  status: 'running' | 'suspended' | 'exited';
   /**
    * Claude only: true from spawn until its first output, at most about 3 s
    * (spec §6.3, launch spinner).
    */
   launching: boolean;
+  /**
+   * Claude only: true from a resume until Claude is ready (its SessionStart,
+   * at most 20 s); keys typed meanwhile aren't sent (spec §9.8).
+   */
+  resuming: boolean;
+  /** How many times it was resumed: each resume starts its output afresh, so views attach again. */
+  generation: number;
   exitCode: number | null;
   signal: number | null;
 }

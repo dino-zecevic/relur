@@ -176,6 +176,12 @@ export class WorkspaceService {
   /** The project's filled-in Start prompt for a workspace (spec §13.5); set by the app. */
   startPrompt: ((workspace: Workspace) => string | null) | null = null;
 
+  /** Whether the profile suspends idle sessions, so they start suspended (spec §9.8); set by the app. */
+  suspendAtStart: ((profileId: string) => boolean) | null = null;
+
+  /** What a resumed Claude gets back: its permission mode and model (spec §9.8); set by the app. */
+  restoreArgs: ((sessionId: string) => string[]) | null = null;
+
   /** What happens once every running setup of a workspace has finished (spec §21.3). */
   private readonly afterSetup = new Map<string, { start: boolean; restart: boolean }>();
 
@@ -386,6 +392,7 @@ export class WorkspaceService {
       background: 0,
       unfinished: null,
       lastPrompt: null,
+      keepRunning: false,
       stateSince: now,
       claudeSessionId: null,
       ports: null,
@@ -532,6 +539,7 @@ export class WorkspaceService {
       background: 0,
       unfinished: null,
       lastPrompt: null,
+      keepRunning: false,
       stateSince: now,
       claudeSessionId: null,
       ports: await allocatePorts(
@@ -807,6 +815,14 @@ export class WorkspaceService {
       .find((s) => s.workspaceId === workspaceId && s.kind === 'claude' && s.status === 'running');
   }
 
+  private suspendedClaude(workspaceId: string): SessionInfo | undefined {
+    return this.terminals.host
+      .list()
+      .find(
+        (s) => s.workspaceId === workspaceId && s.kind === 'claude' && s.status === 'suspended',
+      );
+  }
+
   /**
    * Runs setup in each given repository, in parallel, each in its own Setup
    * tab (spec §8.3, §21.3). `intent` says what follows once every setup of the
@@ -987,6 +1003,19 @@ export class WorkspaceService {
     const workspace = this.ensurePorts(this.workspace(workspaceId));
     const running = this.claudeSession(workspaceId);
     if (running) return running;
+    // A suspended Claude resumes in its session, with what it had (spec §9.8).
+    const suspended = this.suspendedClaude(workspaceId);
+    if (suspended) {
+      return this.terminals.startClaudeInWorkspace(
+        workspace,
+        this.settingsFile(workspace.profileId),
+        {
+          resume: true,
+          into: suspended.id,
+          restore: this.restoreArgs?.(suspended.id) ?? [],
+        },
+      );
+    }
     return this.terminals.startClaudeInWorkspace(
       workspace,
       this.settingsFile(workspace.profileId),
@@ -1030,6 +1059,9 @@ export class WorkspaceService {
    * workspace's repositories as they are now (spec §21.4).
    */
   async restartClaude(workspaceId: string): Promise<SessionInfo> {
+    // A suspended one gets the new arguments when it resumes (spec §9.8).
+    const suspended = this.suspendedClaude(workspaceId);
+    if (suspended) return suspended;
     const running = this.claudeSession(workspaceId);
     if (running) await this.terminals.host.remove(running.id);
     return this.startClaude(workspaceId);
@@ -1042,6 +1074,20 @@ export class WorkspaceService {
    */
   async resumeAtLaunch(): Promise<void> {
     for (const workspace of this.records.claudeWasRunning()) {
+      // With suspension on, it starts suspended; opening it, or continuing
+      // its interrupted work, resumes it (spec §9.8).
+      if (this.suspendAtStart?.(workspace.profileId)) {
+        this.terminals.host.addSuspended({
+          kind: 'claude',
+          title: `${workspace.name} · claude`,
+          cwd: workspace.worktreePath,
+          profileId: workspace.profileId,
+          projectId: workspace.projectId,
+          workspaceId: workspace.id,
+        });
+        if (workspace.state === 'exited') this.records.setState(workspace.id, 'starting');
+        continue;
+      }
       try {
         await this.startClaude(workspace.id);
       } catch {

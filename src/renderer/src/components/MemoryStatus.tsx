@@ -9,6 +9,7 @@ import {
   memoryUsed,
   sessionsTotal,
 } from '@shared/memory';
+import { suspendedNote } from '@shared/suspend';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useOpenGuide } from '../guide/link';
 import { MeterBar } from './UsageMeter';
@@ -18,7 +19,14 @@ import { MeterBar } from './UsageMeter';
  * Claude session and the app relative to the machine's RAM, "2.4 GB of 16 GB",
  * and a panel with the split, the five largest workspaces and what the terms mean.
  */
-export function MemoryStatus({ memory }: { memory: MemorySnapshot }) {
+export function MemoryStatus({
+  memory,
+  suspended = 0,
+}: {
+  memory: MemorySnapshot;
+  /** Claude sessions suspended to save memory, in every profile (spec §9.8). */
+  suspended?: number;
+}) {
   const [open, setOpen] = useState(false);
   const wrapper = useRef<HTMLSpanElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -74,6 +82,7 @@ export function MemoryStatus({ memory }: { memory: MemorySnapshot }) {
           id={panelId}
           panelRef={panel}
           memory={memory}
+          suspended={suspended}
           onLearnMore={() => setOpen(false)}
         />
       ) : null}
@@ -94,11 +103,13 @@ function MemoryPanel({
   id,
   panelRef,
   memory,
+  suspended,
   onLearnMore,
 }: {
   id: string;
   panelRef: React.Ref<HTMLDivElement>;
   memory: MemorySnapshot;
+  suspended: number;
   onLearnMore: () => void;
 }) {
   const openGuide = useOpenGuide();
@@ -124,6 +135,12 @@ function MemoryPanel({
       <div className="mt-2 space-y-1" data-memory-split>
         <Row label="Claude sessions" value={formatBytes(sessionsTotal(memory))} />
         <Row label="This app" value={formatBytes(memory.app)} />
+        {/* Suspended sessions use none until opened (spec §9.8). */}
+        {suspended > 0 ? (
+          <div data-memory-suspended className="text-xs text-fg-muted">
+            {suspendedNote(suspended)} to save memory; they use none until opened.
+          </div>
+        ) : null}
       </div>
       <div className="mt-3 border-t border-line pt-2.5">
         <div className="mb-1.5 text-xs text-fg-muted">Largest workspaces</div>

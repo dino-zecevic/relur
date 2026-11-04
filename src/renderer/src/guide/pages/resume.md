@@ -18,6 +18,8 @@ To quit whenever the window closes, choose **Quit When the Window Closes** in th
 
 When {{app}} starts again, Claude continues the same conversation in each workspace where it was running, and starts there when you open the others. Terminal history isn't kept across restarts; Claude's conversation is.
 
+In a profile that [suspends idle sessions](suspend), only the workspace you're looking at and those whose work is continued start right away; the others start suspended and resume when you open them.
+
 ## Work that was cut off
 
 Quitting, logging out, an update with `install.sh` or a crash stops Claude in the middle of its turn, together with any commands or background agents it had running. {{app}} remembers where that happened. A workspace counts as **unfinished** when Claude was:

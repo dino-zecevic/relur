@@ -9,6 +9,7 @@ import {
 } from '@shared/profiles';
 import { type Profile, ProfileSchema, type Sounds } from '@shared/schemas';
 import { accountFolder } from '@shared/setup';
+import type { SuspendChoice } from '@shared/suspend';
 import { DEFAULT_RESUME_PROMPT } from '@shared/unfinished';
 import type { ConfigStore } from '../config/store';
 import { buildProcessEnv } from '../env/build-env';
@@ -131,6 +132,8 @@ export class ProfileService {
       pr?: { createCommand: string; statusCommand: string };
       /** Continue interrupted work at start (spec §9.7); the default prompt isn't written. */
       resume?: { continueAtStart: boolean; prompt: string };
+      /** Suspend idle sessions after this many minutes, null for off (spec §9.8). */
+      suspendIdleMin?: SuspendChoice | null;
     },
   ): Profile {
     const name = changes.name.trim();
@@ -176,9 +179,17 @@ export class ProfileService {
       resume !== undefined &&
       (resume.continueAtStart !== current.resume.continueAtStart ||
         resume.prompt !== (current.resume.prompt ?? null));
+    const suspendChanged =
+      changes.suspendIdleMin !== undefined &&
+      changes.suspendIdleMin !== (current.suspendIdleMin ?? null);
     const config = this.config.update((raw) => {
       const entry = this.rawProfile(raw.profiles, profileId);
       entry.name = name;
+      if (suspendChanged) {
+        // Off is the default and isn't written.
+        if (changes.suspendIdleMin) entry.suspendIdleMin = changes.suspendIdleMin;
+        else delete entry.suspendIdleMin;
+      }
       if (resumeChanged && resume) {
         // Off and the default prompt aren't written.
         const fields: Record<string, unknown> = {};

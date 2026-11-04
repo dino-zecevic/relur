@@ -594,9 +594,19 @@ exec sleep 600
     }
     await page.waitFor(`${tabCount} === 0`, 'the project shells to close');
 
-    // Start Claude here: Claude in the main checkout with the profile environment, in its own tab.
+    // Start Claude here: Claude in the main checkout with the profile environment, in its own
+    // tab, with the hooks and a conversation id the app chose, so it can be suspended (spec §9.8).
     await clickButtonText(page, 'Start Claude here');
-    assert.equal(await claudeRun(0), `${repo}\nwork`);
+    const mainRun = (await claudeRun(0)).split('\n');
+    assert.deepEqual(mainRun.slice(0, 5), [
+      repo,
+      'work',
+      '',
+      '--settings',
+      path.join(path.dirname(configFile), 'claude', 'settings-ask-link.json'),
+    ]);
+    assert.equal(mainRun[5], '--session-id');
+    assert.match(mainRun[6] ?? '', /^[0-9a-f-]{36}$/);
     await page.waitFor(`${tabCount} === 1`, 'the Claude tab');
     await clickLabel(page, 'Close api-service · claude');
     await page.waitFor(`${tabCount} === 0`, 'the Claude tab to close');
@@ -1412,6 +1422,7 @@ exec sleep 600
       process.platform === 'darwin' ? 'Reveal in Finder' : 'Show in folder',
       'Copy path',
       'Copy branch name',
+      'Keep Claude Running',
       'Delete workspace…',
     ]);
     await rowMenu('Copy branch name');

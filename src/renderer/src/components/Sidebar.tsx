@@ -7,6 +7,7 @@ import {
   glyphFor,
   STATE_LABEL,
 } from '@shared/status';
+import { SUSPENDED_TOOLTIP } from '@shared/suspend';
 import { unfinishedTooltip, workspaceGlyph } from '@shared/unfinished';
 import { linkedRepos, type Workspace } from '@shared/workspaces';
 import { type KeyboardEvent, useRef, useState } from 'react';
@@ -17,6 +18,7 @@ import { useLinkedDisclosure } from '../ui/linked-disclosure';
 import { useNow } from '../ui/now';
 import { ProfileDot } from '../ui/profile-color';
 import { StatusGlyph } from '../ui/StatusGlyph';
+import { useSuspended } from '../ui/suspended';
 import { elapsed } from '../ui/time';
 import { HOME, type View } from '../view';
 import { useOpenInEditor } from './EditorPicker';
@@ -41,9 +43,13 @@ const LABEL_COLOR: Partial<Record<Workspace['state'], string>> = {
  * its state, at a gate with the gate's label, with its background work
  * (§10.2), and its branch.
  */
-function rowTooltip(w: Workspace, glyph: Glyph | null): string {
+function rowTooltip(w: Workspace, glyph: Glyph | null, suspended: boolean): string {
+  // Suspended to save memory (spec §9.8), on a line of its own.
+  const tail = suspended ? `\n${SUSPENDED_TOOLTIP}` : '';
   // The Unfinished marker (spec §9.7) says why instead.
-  if (glyph === 'unfinished') return `${w.name}\n${unfinishedTooltip(w.unfinished)} · ${w.branch}`;
+  if (glyph === 'unfinished') {
+    return `${w.name}\n${unfinishedTooltip(w.unfinished)} · ${w.branch}${tail}`;
+  }
   const state =
     w.state === 'awaiting-approval' && w.workflow?.label
       ? `${STATE_LABEL[w.state]}: ${w.workflow.label}`
@@ -51,7 +57,7 @@ function rowTooltip(w: Workspace, glyph: Glyph | null): string {
         ? 'Done (unread)'
         : STATE_LABEL[w.state];
   const note = backgroundNote(w.state, w.background);
-  return `${w.name}\n${note ? `${state} · ${note}` : state} · ${w.branch}`;
+  return `${w.name}\n${note ? `${state} · ${note}` : state} · ${w.branch}${tail}`;
 }
 
 /** The active profile's tree: Home, then projects with their workspaces. */
@@ -87,6 +93,7 @@ export function Sidebar({
   onDeleteWorkspace: (workspace: Workspace) => void;
 }) {
   const launching = useLaunching();
+  const suspended = useSuspended();
   // Working rows show their elapsed time (components.md, Status glyph).
   const now = useNow(workspaces.some((w) => w.state === 'working'));
   const projects = config.projects.filter((p) => p.profileId === profile.id);
@@ -106,7 +113,8 @@ export function Sidebar({
 
   // Open in editor (spec §6.13): the primary repository, asking for an editor the first time.
   const editorOpen = useOpenInEditor();
-  // Spec §6.1: Open in editor, Reveal in Finder, Copy path, Copy branch name, Delete….
+  // Spec §6.1: Open in editor, Reveal in Finder, Copy path, Copy branch name,
+  // Keep Claude Running (§9.8), Delete….
   const workspaceMenu = async (workspace: Workspace) => {
     const choice = await trpcClient.ui.contextMenu.mutate({
       items: [
@@ -114,10 +122,16 @@ export function Sidebar({
         { id: 'reveal', label: REVEAL_LABEL },
         { id: 'copyPath', label: 'Copy path' },
         { id: 'copyBranch', label: 'Copy branch name' },
+        { id: 'keepRunning', label: 'Keep Claude Running', checked: workspace.keepRunning },
         { id: 'delete', label: 'Delete workspace…' },
       ],
     });
-    if (choice === 'editor') {
+    if (choice === 'keepRunning') {
+      void trpcClient.workspaces.setKeepRunning.mutate({
+        workspaceId: workspace.id,
+        on: !workspace.keepRunning,
+      });
+    } else if (choice === 'editor') {
       const project = config.projects.find((p) => p.id === workspace.projectId);
       void editorOpen.run(
         () => trpcClient.editor.openWorktree.mutate({ workspaceId: workspace.id, projectId: null }),
@@ -370,8 +384,9 @@ export function Sidebar({
                           data-nav-key={`w:${w.id}`}
                           data-nav-parent={`p:${project.id}`}
                           tabIndex={tabFor(`w:${w.id}`)}
-                          title={rowTooltip(w, glyph)}
+                          title={rowTooltip(w, glyph, suspended.has(w.id))}
                           data-unfinished={w.unfinished?.kind}
+                          data-suspended={suspended.has(w.id) || undefined}
                           aria-current={selected || undefined}
                           onClick={() => onOpenWorkspace(w)}
                           onContextMenu={(event) => {
@@ -404,6 +419,11 @@ export function Sidebar({
                               className="max-w-24 truncate text-xs text-fg-subtle"
                             >
                               {w.background} in background
+                            </span>
+                          ) : suspended.has(w.id) && glyph !== 'unfinished' ? (
+                            // Suspended to save memory (spec §9.8); the state's glyph stays.
+                            <span className="max-w-24 truncate text-xs text-fg-subtle">
+                              Suspended
                             </span>
                           ) : glyph === 'working' && w.state === 'working' ? (
                             <span className="font-mono text-xs text-fg-subtle">

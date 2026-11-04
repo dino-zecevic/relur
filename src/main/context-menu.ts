@@ -4,6 +4,8 @@ export interface ContextMenuItem {
   id: string;
   label: string;
   enabled?: boolean;
+  /** A checkbox item, ticked or not. */
+  checked?: boolean;
 }
 
 /**
@@ -19,6 +21,7 @@ export function showContextMenu(
       items.map((item) => ({
         label: item.label,
         enabled: item.enabled ?? true,
+        ...(item.checked === undefined ? {} : { type: 'checkbox' as const, checked: item.checked }),
         click: () => resolve(item.id),
       })),
     );

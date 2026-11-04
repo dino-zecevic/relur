@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { envVar } from '@shared/brand';
@@ -101,6 +102,19 @@ export class TerminalService {
   additions: SessionAdditions = { env: {}, pathDirs: [] };
   /** Set once skill sources are known; without it no plugins are loaded. */
   skills: SkillDirs | null = null;
+  /** The `--settings` file for a profile's Claude (spec §9.3); set once it is written. */
+  claudeSettings: ((profileId: string) => string) | null = null;
+  /**
+   * Set once suspension exists (spec §9.8): resumes a suspended Claude, or
+   * waits for one that resumes, until it is ready for typed text.
+   */
+  wake: ((session: SessionInfo) => Promise<void>) | null = null;
+
+  /**
+   * Claude Code's session id of each main-checkout Claude (spec §9.8), by the
+   * app's session id: chosen at its start, then followed from hooks.
+   */
+  private readonly mainClaude = new Map<string, string>();
 
   /** Home shell session per profile id (spec §6.7). */
   private readonly homeShells = new Map<string, string>();
@@ -140,11 +154,20 @@ export class TerminalService {
    * Types a prompt into the workspace's Claude, as a paste followed by Enter,
    * so a long prompt arrives as one message.
    */
-  sendToClaude(workspaceId: string, prompt: string): void {
-    const claude = this.host
-      .list()
-      .find((s) => s.workspaceId === workspaceId && s.kind === 'claude' && s.status === 'running');
-    if (!claude) throw new Error("Claude isn't running in this workspace; start it first");
+  async sendToClaude(workspaceId: string, prompt: string): Promise<void> {
+    const find = () =>
+      this.host
+        .list()
+        .find((s) => s.workspaceId === workspaceId && s.kind === 'claude' && s.status !== 'exited');
+    let claude = find();
+    // A suspended Claude resumes first; the text waits until it is ready (spec §9.8).
+    if (claude && (claude.status === 'suspended' || claude.resuming) && this.wake) {
+      await this.wake(claude);
+      claude = find();
+    }
+    if (claude?.status !== 'running') {
+      throw new Error("Claude isn't running in this workspace; start it first");
+    }
     this.host.write(claude.id, `\x1b[200~${prompt}\x1b[201~`);
     setTimeout(() => {
       if (this.host.has(claude.id)) this.host.write(claude.id, '\r');
@@ -182,13 +205,51 @@ export class TerminalService {
    */
   async startClaudeInProject(projectId: string): Promise<SessionInfo> {
     const project = this.project(projectId);
-    return this.spawnClaude({
+    // Hooks and status line as in a workspace, and a conversation id chosen
+    // here, so it can be suspended and resumed (spec §9.8).
+    const claudeId = randomUUID();
+    const session = await this.spawnClaude({
       title: `${project.name} · claude`,
       profile: this.env.profile(project.profileId),
       project,
       cwd: expandHome(project.repoPath),
-      args: [],
+      args: [...this.settingsArgs(project.profileId), '--session-id', claudeId],
     });
+    this.mainClaude.set(session.id, claudeId);
+    return session;
+  }
+
+  /** A main-checkout Claude's conversation changed (a hook's session id, after /clear). */
+  followMainClaude(sessionId: string, claudeId: string): void {
+    if (this.mainClaude.has(sessionId)) this.mainClaude.set(sessionId, claudeId);
+  }
+
+  /**
+   * Resumes a suspended main-checkout Claude (spec §9.8) in its session, with
+   * its conversation, and `restore` (the permission mode and model it had).
+   */
+  async resumeClaudeInProject(sessionId: string, restore: string[] = []): Promise<SessionInfo> {
+    const info = this.host.get(sessionId);
+    if (info.status !== 'suspended' || !info.projectId || info.workspaceId) return info;
+    const project = this.project(info.projectId);
+    const claudeId = this.mainClaude.get(sessionId);
+    return this.spawnClaude({
+      title: info.title,
+      profile: this.env.profile(project.profileId),
+      project,
+      cwd: expandHome(project.repoPath),
+      args: [
+        ...this.settingsArgs(project.profileId),
+        ...(claudeId ? ['--resume', claudeId] : ['--continue']),
+      ],
+      into: sessionId,
+      restore,
+    });
+  }
+
+  private settingsArgs(profileId: string): string[] {
+    const file = this.claudeSettings?.(profileId);
+    return file ? ['--settings', file] : [];
   }
 
   /**
@@ -202,10 +263,22 @@ export class TerminalService {
       resume = false,
       prompt = null,
       sessionId = null,
-    }: { resume?: boolean; prompt?: string | null; sessionId?: string | null } = {},
+      into,
+      restore,
+    }: {
+      resume?: boolean;
+      prompt?: string | null;
+      sessionId?: string | null;
+      /** A suspended session to resume in (spec §9.8). */
+      into?: string;
+      /** Arguments that bring back what the session had: permission mode, model (spec §9.8). */
+      restore?: string[];
+    } = {},
   ): Promise<SessionInfo> {
     const launch = workspaceClaudeLaunch(workspace, settingsFile, { resume, sessionId });
     return this.spawnClaude({
+      into,
+      restore,
       title: `${workspace.name} · claude`,
       profile: this.env.profile(workspace.profileId),
       project: this.project(workspace.projectId),
@@ -383,9 +456,16 @@ export class TerminalService {
     extraEnv?: Record<string, string>;
     /** The first message, after every option (spec §9.1). */
     prompt?: string | null;
+    /** A suspended session to resume in, instead of a new one (spec §9.8). */
+    into?: string;
+    /** Added after the profile's own arguments: what the session had (spec §9.8). */
+    restore?: string[];
   }): Promise<SessionInfo> {
     const { title, profile, project, workspace, cwd, args } = options;
     const env = { ...(await this.processEnv(profile, project, workspace)), ...options.extraEnv };
+    // Hooks and the status line name the app's session (spec §9.2).
+    const id = options.into ?? randomUUID();
+    env[envVar('TERMINAL_SESSION')] = id;
     // Claude started by the app gets --plugin-dir, so nothing loads twice (spec §13.3).
     delete env[PLUGIN_DIRS_VAR];
     const skills = await this.skills?.pluginDirs(profile.id, sessionProjects(project, workspace));
@@ -399,14 +479,16 @@ export class TerminalService {
       this.claudeGate?.startFailed(profile.id);
       throw new Error(`"${profile.claude.command}" was not found on PATH`);
     }
-    const session = this.host.spawn({
-      kind: 'claude',
+    const spawn = {
+      id,
+      kind: 'claude' as const,
       title,
       command,
       args: [
         ...args,
         ...pluginArgs,
         ...profile.claude.args,
+        ...(options.restore ?? []),
         ...(options.prompt ? [options.prompt] : []),
       ],
       cwd,
@@ -414,7 +496,10 @@ export class TerminalService {
       profileId: profile.id,
       projectId: project.id,
       workspaceId: workspace?.id ?? null,
-    });
+    };
+    const session = options.into
+      ? await this.host.resume(options.into, spawn)
+      : this.host.spawn(spawn);
     if (workspace && skills) this.skills?.claudeStarted(workspace.id, skills.fingerprint);
     const started = Date.now();
     void this.host.waitForExit(session.id).then((exited) => {

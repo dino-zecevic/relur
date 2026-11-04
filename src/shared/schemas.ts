@@ -204,6 +204,11 @@ const ProfileObjectSchema = z.object({
       prompt: z.string().min(1).nullish(),
     })
     .prefault({}),
+  /**
+   * Spec §9.8: suspend idle Claude sessions after this many minutes; unset is
+   * off (the default, not written).
+   */
+  suspendIdleMin: z.union([z.literal(5), z.literal(10), z.literal(30)]).nullish(),
 });
 export const ProfileSchema = z.preprocess(
   (raw: z.input<typeof ProfileObjectSchema>) => liftLookup(raw),

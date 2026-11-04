@@ -49,7 +49,9 @@ function service() {
         running.add(id);
         events.emit('spawn', id);
       },
-      send: (id, prompt) => sent.push({ id, prompt, at: Date.now() }),
+      send: (id, prompt) => {
+        sent.push({ id, prompt, at: Date.now() });
+      },
       onSpawn: (l) => {
         events.on('spawn', l);
         return () => events.off('spawn', l);

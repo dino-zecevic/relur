@@ -37,6 +37,7 @@ interface Row {
   unfinished_at: string | null;
   unfinished_stopped: number;
   last_prompt: string | null;
+  keep_running: number;
 }
 
 interface RepoRow {
@@ -120,6 +121,7 @@ const toWorkspace = (row: Row, linked: WorkspaceRepo[] = []): Workspace => ({
         }
       : null,
   lastPrompt: row.last_prompt,
+  keepRunning: row.keep_running === 1,
   claudeSessionId: row.claude_session_id,
   ports:
     row.port_base !== null && row.port_count !== null
@@ -161,11 +163,15 @@ export class WorkspaceRecords {
 
   /** Records a new workspace with its linked repositories (`repos` after the main one). */
   insert(
-    workspace: Omit<Workspace, 'repos' | 'background' | 'unfinished' | 'lastPrompt'> & {
+    workspace: Omit<
+      Workspace,
+      'repos' | 'background' | 'unfinished' | 'lastPrompt' | 'keepRunning'
+    > & {
       repos?: NewLinkedRepo[] | WorkspaceRepo[];
       background?: number;
       unfinished?: Workspace['unfinished'];
       lastPrompt?: string | null;
+      keepRunning?: boolean;
     },
   ): void {
     const linked = (workspace.repos ?? []).filter((r) => !('primary' in r) || !r.primary);
@@ -215,7 +221,10 @@ export class WorkspaceRecords {
   }
 
   private insertRow(
-    workspace: Omit<Workspace, 'repos' | 'background' | 'unfinished' | 'lastPrompt'>,
+    workspace: Omit<
+      Workspace,
+      'repos' | 'background' | 'unfinished' | 'lastPrompt' | 'keepRunning'
+    >,
   ): void {
     this.prepare(
       `INSERT INTO workspaces
@@ -390,6 +399,32 @@ export class WorkspaceRecords {
   }
 
   /** Whether its Claude runs; kept so the next launch can resume it (spec §9.4). */
+  /** Keep running (spec §9.8): its Claude is never suspended when idle. */
+  setKeepRunning(id: string, on: boolean): void {
+    const result = this.prepare('UPDATE workspaces SET keep_running = ? WHERE id = ?').run(
+      on ? 1 : 0,
+      id,
+    );
+    if (result.changes > 0) this.events.emit('change');
+  }
+
+  /** The projects whose main-checkout Claude is kept running (spec §9.8). */
+  keptMainCheckouts(): string[] {
+    const rows = this.prepare('SELECT project_id FROM kept_main_checkouts').all() as {
+      project_id: string;
+    }[];
+    return rows.map((r) => r.project_id);
+  }
+
+  setMainCheckoutKept(projectId: string, on: boolean): void {
+    this.prepare(
+      on
+        ? 'INSERT OR IGNORE INTO kept_main_checkouts (project_id) VALUES (?)'
+        : 'DELETE FROM kept_main_checkouts WHERE project_id = ?',
+    ).run(projectId);
+    this.events.emit('change');
+  }
+
   setClaudeRunning(id: string, running: boolean): void {
     this.prepare('UPDATE workspaces SET claude_running = ? WHERE id = ?').run(running ? 1 : 0, id);
   }

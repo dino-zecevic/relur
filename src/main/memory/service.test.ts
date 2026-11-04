@@ -16,6 +16,8 @@ const info = (id: string, workspaceId: string | null): SessionInfo => ({
   exitCode: null,
   signal: null,
   launching: false,
+  resuming: false,
+  generation: 0,
 });
 const TABLE: ProcessEntry[] = [
   { pid: 10, ppid: 1, rss: 100 * MB, name: 'App', args: 'App' },

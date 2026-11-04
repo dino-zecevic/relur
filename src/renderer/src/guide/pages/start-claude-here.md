@@ -13,3 +13,5 @@ Edits made here land in your main checkout, outside any workspace branch. For ch
 In a project view, these sessions open as tabs after the project's own tabs (Workspaces, Setup, Skills, Workflow); each closes with its **×**. They have no worktree, status or Changes panel.
 
 Claude here gets the project's [skill sources](skills#how-claude-gets-them), as in a workspace.
+
+When the profile [suspends idle sessions](suspend), Claude here is suspended too once its tab hasn't been shown for that long, and resumes when you show the tab again. To keep it running, right-click its tab and choose **Keep Claude Running**; that's remembered for the project.

@@ -499,6 +499,10 @@ export function createAppRouter({
             resume: z
               .object({ continueAtStart: z.boolean(), prompt: z.string().max(4000) })
               .optional(),
+            suspendIdleMin: z
+              .union([z.literal(5), z.literal(10), z.literal(30)])
+              .nullable()
+              .optional(),
           }),
         )
         .mutation(({ input }) => profiles.update(input.profileId, input)),
@@ -822,6 +826,10 @@ export function createAppRouter({
       startClaude: publicProcedure
         .input(workspaceId)
         .mutation(({ input }) => workspaces.startClaude(input.workspaceId)),
+      /** Keep running (spec §9.8): its Claude is never suspended when idle. */
+      setKeepRunning: publicProcedure
+        .input(workspaceId.extend({ on: z.boolean() }))
+        .mutation(({ input }) => workspaceRecords.setKeepRunning(input.workspaceId, input.on)),
       /** A shell in one of its worktrees (New shell in…). */
       shell: publicProcedure
         .input(workspaceId.extend(repo))
@@ -1039,6 +1047,11 @@ export function createAppRouter({
       startClaudeInProject: publicProcedure
         .input(projectId)
         .mutation(({ input }) => terminals.startClaudeInProject(input.projectId)),
+      /** The projects whose main-checkout Claude is kept running (spec §9.8). */
+      keptMainCheckouts: publicProcedure.query(() => workspaceRecords.keptMainCheckouts()),
+      setMainCheckoutKept: publicProcedure
+        .input(projectId.extend({ on: z.boolean() }))
+        .mutation(({ input }) => workspaceRecords.setMainCheckoutKept(input.projectId, input.on)),
       /** Sends the calling window a MessagePort for the session, tagged with `attachId`. */
       attach: publicProcedure
         .input(sessionId.extend({ attachId: z.string().min(1) }))
@@ -1118,7 +1131,12 @@ export function createAppRouter({
       /** What the calling window shows, for "unless that Claude tab is visible" (spec §10.3). */
       setVisible: publicProcedure
         .input(
-          z.object({ workspaceId: z.string().min(1).max(100).nullable(), claudeTab: z.boolean() }),
+          z.object({
+            workspaceId: z.string().min(1).max(100).nullable(),
+            claudeTab: z.boolean(),
+            // The shown terminal session, for a main checkout's Claude (spec §9.8).
+            sessionId: z.string().min(1).max(100).nullable().optional(),
+          }),
         )
         .mutation(({ input, ctx }) => statusPlatform.setVisible(ctx.windowId, input)),
       /** Viewing a workspace clears its unread marker (spec §10.2). */
@@ -1212,6 +1230,8 @@ export function createAppRouter({
                   id: z.string().min(1),
                   label: z.string().min(1),
                   enabled: z.boolean().optional(),
+                  /** A checkbox item, ticked or not (Keep Claude Running, spec §9.8). */
+                  checked: z.boolean().optional(),
                 }),
               )
               .min(1)

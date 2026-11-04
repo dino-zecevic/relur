@@ -284,3 +284,86 @@ describe('SessionHost', () => {
     await host.remove(info.id);
   }, 20_000);
 });
+
+describe('SessionHost suspend and resume (spec §9.8)', () => {
+  const claude = (script: string, extra: Partial<SpawnOptions> = {}) =>
+    sh(script, { kind: 'claude', ...extra });
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('stops the process group but keeps the session, without an exit', async () => {
+    const host = new SessionHost({ killTimeoutMs: 300 });
+    const events: string[] = [];
+    host.onExit(() => events.push('exit'));
+    host.onSuspend(() => events.push('suspend'));
+    const info = host.spawn(claude('sleep 30 & echo $! > /dev/null; echo up; wait'));
+    const rec = recorder();
+    host.attach(info.id, rec.sink);
+    await until(() => rec.output().includes('up'), 'output');
+    const pid = host.processes('claude')[0]?.pid ?? 0;
+    await host.suspend(info.id);
+    expect(host.get(info.id).status).toBe('suspended');
+    expect(events).toEqual(['suspend']);
+    expect(rec.exit()).toBeUndefined();
+    expect(alive(pid)).toBe(false);
+    // Not running: not counted, not measured, no input.
+    expect(host.processes('claude')).toEqual([]);
+    expect(host.busyCount()).toBe(0);
+    await host.shutdown();
+  });
+
+  it('resumes in the same session with fresh output and blocks input until ready', async () => {
+    const host = new SessionHost({ killTimeoutMs: 300 });
+    const resumed: string[] = [];
+    host.onResume((i) => resumed.push(i.id));
+    const info = host.spawn(claude('echo first; sleep 30'));
+    const old = recorder();
+    host.attach(info.id, old.sink);
+    await until(() => old.output().includes('first'), 'first output');
+    await host.suspend(info.id);
+    const again = await host.resume(info.id, claude('cat', { id: info.id }));
+    expect(again).toMatchObject({ id: info.id, status: 'running', resuming: true, generation: 1 });
+    expect(resumed).toEqual([info.id]);
+    // The old views were closed; a new one gets only the new output.
+    expect(old.closed).toBe(true);
+    const view = recorder();
+    const keys = host.attach(info.id, view.sink);
+    expect(host.scrollback(info.id)).not.toContain('first');
+    keys.input('early\r');
+    await new Promise((r) => setTimeout(r, 200));
+    expect(view.output()).not.toContain('early');
+    host.ready(info.id);
+    expect(host.get(info.id).resuming).toBe(false);
+    keys.input('late\r');
+    await until(() => view.output().includes('late'), 'echo after ready');
+    expect(view.output()).not.toContain('early');
+    await host.shutdown();
+  });
+
+  it('starts a session suspended, and ends one that cannot resume as exited', async () => {
+    const host = new SessionHost({ killTimeoutMs: 300 });
+    const exits: string[] = [];
+    host.onExit((i) => exits.push(i.id));
+    const info = host.addSuspended({
+      kind: 'claude',
+      title: 'later',
+      cwd: process.cwd(),
+      profileId: 'work',
+      workspaceId: 'ws_1',
+    });
+    expect(info).toMatchObject({ status: 'suspended', launching: false, workspaceId: 'ws_1' });
+    expect(host.busyCount()).toBe(0);
+    // Stopping it signals nothing (it has no process).
+    await host.stop(info.id);
+    host.endSuspended(info.id);
+    expect(host.get(info.id).status).toBe('exited');
+    expect(exits).toEqual([info.id]);
+    await host.shutdown();
+  });
+});

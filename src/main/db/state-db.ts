@@ -78,6 +78,10 @@ const MIGRATIONS: string[] = [
    ALTER TABLE workspaces ADD COLUMN last_prompt TEXT;`,
   // How many of Claude's background commands the stop ended (spec §9.7).
   `ALTER TABLE workspaces ADD COLUMN unfinished_stopped INTEGER NOT NULL DEFAULT 0;`,
+  // Keep running: never suspended when idle (spec §9.8), per workspace and per
+  // project for its main checkout's Claude.
+  `ALTER TABLE workspaces ADD COLUMN keep_running INTEGER NOT NULL DEFAULT 0;
+   CREATE TABLE kept_main_checkouts (project_id TEXT PRIMARY KEY);`,
 ];
 
 export type StateDb = Database.Database;

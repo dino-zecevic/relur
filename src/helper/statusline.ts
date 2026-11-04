@@ -21,6 +21,11 @@ function runOwn(command: string, input: string): Promise<string> {
   });
 }
 
+const modelId = (model: unknown): string | null => {
+  const id = model && typeof model === 'object' ? (model as { id?: unknown }).id : null;
+  return typeof id === 'string' && id ? id : null;
+};
+
 /**
  * `statusline` (spec §9.3, §11): forwards `rate_limits` to the bridge with the
  * profile id, and prints the output of the profile's own status line command
@@ -47,7 +52,10 @@ export async function runStatusLine(
           {
             profileId: env[envVar('PROFILE')] ?? null,
             workspaceId: env[envVar('WORKSPACE_ID')] ?? null,
+            sessionId: env[envVar('TERMINAL_SESSION')] ?? null,
             rateLimits: payload.rate_limits ?? null,
+            // The session's model, so a resume keeps it (spec §9.8).
+            model: modelId(payload.model),
           },
           500,
         )

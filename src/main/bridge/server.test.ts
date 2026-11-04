@@ -44,16 +44,33 @@ describe('HookBridge', () => {
           event: 'Stop',
           workspaceId: 'ws',
           profileId: 'work',
+          sessionId: 'term-1',
           payload: { a: 1 },
         })
       ).status,
     ).toBe(200);
-    await post('/statusline', { profileId: 'work', rateLimits: { five_hour: {} } });
+    await post('/statusline', {
+      profileId: 'work',
+      rateLimits: { five_hour: {} },
+      model: 'claude-haiku-5-5',
+    });
     expect(hooks).toEqual([
-      { event: 'Stop', workspaceId: 'ws', profileId: 'work', payload: { a: 1 } },
+      {
+        event: 'Stop',
+        workspaceId: 'ws',
+        profileId: 'work',
+        sessionId: 'term-1',
+        payload: { a: 1 },
+      },
     ]);
     expect(lines).toEqual([
-      { profileId: 'work', workspaceId: null, rateLimits: { five_hour: {} } },
+      {
+        profileId: 'work',
+        workspaceId: null,
+        sessionId: null,
+        rateLimits: { five_hour: {} },
+        model: 'claude-haiku-5-5',
+      },
     ]);
   });
 

@@ -43,7 +43,7 @@ export interface UnfinishedDeps {
   /** Starts the workspace's Claude, resuming its conversation (spec §9.4). */
   startClaude(workspaceId: string): Promise<unknown>;
   /** Types the prompt into its Claude (a paste and Enter). */
-  send(workspaceId: string, prompt: string): void;
+  send(workspaceId: string, prompt: string): Promise<void> | void;
   /** A workspace's Claude was spawned. */
   onSpawn(listener: (workspaceId: string) => void): () => void;
   /** A workspace's Claude reported SessionStart. */
@@ -317,7 +317,7 @@ export class UnfinishedService {
         continue;
       }
       try {
-        this.deps.send(workspace.id, resumePrompt(this.deps.settings(workspace.profileId)));
+        await this.deps.send(workspace.id, resumePrompt(this.deps.settings(workspace.profileId)));
       } catch (error) {
         settle('failed', error instanceof Error ? error.message : String(error));
         continue;

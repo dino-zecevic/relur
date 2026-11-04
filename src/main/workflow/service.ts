@@ -25,7 +25,8 @@ const DEBOUNCE_MS = 300;
 
 /** What the workflow service needs to type a prompt into a workspace's Claude. */
 export interface PromptSender {
-  sendToClaude(workspaceId: string, prompt: string): void;
+  /** Resolves once typed; a suspended Claude resumes first (spec §9.8). */
+  sendToClaude(workspaceId: string, prompt: string): Promise<void> | void;
 }
 
 /** A workspace's workflow changed: before and after, for alerts (spec §13.5). */
@@ -202,24 +203,24 @@ export class WorkflowService {
    * Continue (spec §13.5): types the filled-in Continue prompt into the idle
    * Claude, at a step status only. A gate waits for a person's own answer.
    */
-  continue(workspaceId: string): void {
+  continue(workspaceId: string): Promise<void> | void {
     const { workspace, workflow, info } = this.idleAt(workspaceId);
     if (info.kind === 'final') throw new Error(`${info.label} is a final status`);
     if (info.kind === 'gate') {
       throw new Error(`${info.label} waits for your answer in Claude, not for Continue`);
     }
-    this.sender.sendToClaude(
+    return this.sender.sendToClaude(
       workspaceId,
       fillTemplate(workflow.continuePrompt, promptValues(workspace, info.status)),
     );
   }
 
   /** A gate's answer button (spec §13.5): types its text into the idle Claude. */
-  answer(workspaceId: string): void {
+  answer(workspaceId: string): Promise<void> | void {
     const { workspace, info } = this.idleAt(workspaceId);
     const answer = info.kind === 'gate' ? info.statuses[info.index]?.answer : null;
     if (!answer) throw new Error(`${info.label} has no answer button`);
-    this.sender.sendToClaude(
+    return this.sender.sendToClaude(
       workspaceId,
       fillTemplate(answer.prompt, promptValues(workspace, info.status)),
     );

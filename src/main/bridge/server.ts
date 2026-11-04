@@ -10,6 +10,8 @@ export interface HookMessage {
   event: string;
   workspaceId: string | null;
   profileId: string | null;
+  /** The app's terminal session of the Claude that sent it (spec §9.2); null from older helpers. */
+  sessionId?: string | null;
   payload: unknown;
 }
 
@@ -17,7 +19,10 @@ export interface HookMessage {
 export interface StatusLineMessage {
   profileId: string | null;
   workspaceId: string | null;
+  sessionId?: string | null;
   rateLimits: unknown;
+  /** The session's model id (spec §9.8). */
+  model?: string | null;
 }
 
 /** The command line tool's request (spec §7.5). */
@@ -252,6 +257,7 @@ export class HookBridge {
           event,
           workspaceId,
           profileId: str(body.profileId),
+          sessionId: str(body.sessionId),
           payload: body.payload ?? null,
         } satisfies HookMessage);
         return;
@@ -261,7 +267,9 @@ export class HookBridge {
         this.events.emit('statusline', {
           profileId: str(body.profileId),
           workspaceId: str(body.workspaceId),
+          sessionId: str(body.sessionId),
           rateLimits: body.rateLimits ?? null,
+          model: str(body.model),
         } satisfies StatusLineMessage);
         return;
       case '/add': {

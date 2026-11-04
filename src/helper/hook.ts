@@ -28,6 +28,8 @@ export async function runHook(
       event,
       workspaceId: env[envVar('WORKSPACE_ID')] ?? null,
       profileId: env[envVar('PROFILE')] ?? null,
+      // The app's terminal session of this Claude (spec §9.2), for a main checkout's.
+      sessionId: env[envVar('TERMINAL_SESSION')] ?? null,
       payload,
     },
     1000,

@@ -1,5 +1,6 @@
 import { formatChord, SHORTCUTS } from '@shared/shortcuts';
 import type { StatusGlyph as Glyph } from '@shared/status';
+import { SUSPENDED_TOOLTIP } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import { isMac, Kbd, keyHint } from '../ui/controls';
 import { StatusGlyph } from '../ui/StatusGlyph';
@@ -48,6 +49,7 @@ export function SessionTab({
   hintOnlyActive = false,
   onSelect,
   onClose,
+  onContextMenu,
 }: {
   session: SessionInfo;
   name: string;
@@ -59,8 +61,11 @@ export function SessionTab({
   glyph?: Glyph | null;
   onSelect: () => void;
   onClose: (() => void) | null;
+  /** The tab's own context menu (a main checkout's Claude: Keep Claude Running, spec §9.8). */
+  onContextMenu?: () => void;
 }) {
   const exited = session.status === 'exited';
+  const suspended = session.status === 'suspended';
   const icon =
     session.kind === 'setup' ? (
       // Setup (spec §8.3): working while it runs, an error glyph when it failed.
@@ -97,12 +102,22 @@ export function SessionTab({
         aria-selected={active}
         title={`${exited ? `${session.title} (exited)` : session.title}${
           hintOnlyActive && key ? ` (${key})` : ''
-        }`}
+        }${suspended ? `\n${SUSPENDED_TOOLTIP}` : ''}`}
+        data-suspended={suspended || undefined}
+        onContextMenu={
+          onContextMenu
+            ? (event) => {
+                event.preventDefault();
+                onContextMenu();
+              }
+            : undefined
+        }
         className="flex items-center gap-2"
         onClick={onSelect}
       >
         {icon}
         <span className={exited ? 'text-fg-subtle' : undefined}>{name}</span>
+        {suspended ? <span className="text-xs text-fg-subtle">Suspended</span> : null}
         {key && (active || !hintOnlyActive) ? <Kbd>{key}</Kbd> : null}
       </button>
       {onClose ? (

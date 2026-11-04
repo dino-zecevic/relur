@@ -41,8 +41,16 @@ beforeEach(async () => {
 afterEach(() => new Promise<void>((r) => server.close(() => r())));
 
 describe('helper hook', () => {
-  it('forwards the payload tagged with workspace, profile and event', async () => {
+  it('forwards the payload tagged with workspace, profile, session and event', async () => {
     expect(await runHook('Stop', '{"session_id":"abc"}', env)).toBe(0);
+    // A main checkout's Claude has no workspace, only its terminal session (spec §9.8).
+    expect(
+      await runHook('Stop', '{}', {
+        ...env,
+        [envVar('WORKSPACE_ID')]: undefined,
+        [envVar('TERMINAL_SESSION')]: 'term-1',
+      }),
+    ).toBe(0);
     expect(received).toEqual([
       {
         url: '/hook',
@@ -51,7 +59,19 @@ describe('helper hook', () => {
           event: 'Stop',
           workspaceId: 'ws_1',
           profileId: 'work',
+          sessionId: null,
           payload: { session_id: 'abc' },
+        },
+      },
+      {
+        url: '/hook',
+        auth: 'Bearer secret',
+        body: {
+          event: 'Stop',
+          workspaceId: null,
+          profileId: 'work',
+          sessionId: 'term-1',
+          payload: {},
         },
       },
     ]);
@@ -179,7 +199,7 @@ describe('helper statusline', () => {
     let out = '';
     const input = JSON.stringify({
       rate_limits: { five_hour: { used_percentage: 12 } },
-      model: {},
+      model: { id: 'claude-haiku-5-5', display_name: 'Haiku' },
     });
     await runStatusLine(
       input,
@@ -196,7 +216,10 @@ describe('helper statusline', () => {
         body: {
           profileId: 'work',
           workspaceId: 'ws_1',
+          sessionId: null,
           rateLimits: { five_hour: { used_percentage: 12 } },
+          // Kept so a resume gets the same model (spec §9.8).
+          model: 'claude-haiku-5-5',
         },
       },
     ]);

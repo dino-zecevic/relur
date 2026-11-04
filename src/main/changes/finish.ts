@@ -250,35 +250,35 @@ export class FinishService {
       title: workspace.task.title || workspace.name,
       url: workspace.task.url ?? '',
     });
-    this.sendToClaude(workspace, `${linked.before}${filled}${linked.after}`);
+    await this.sendToClaude(workspace, `${linked.before}${filled}${linked.after}`);
     return { via: 'claude' };
   }
 
   /** "Ask Claude to write it" (spec §14.1): Claude writes the message and commits. */
-  askClaudeToCommit(workspaceId: string, projectId: string | null = null): void {
+  askClaudeToCommit(workspaceId: string, projectId: string | null = null): Promise<void> {
     const workspace = this.workspace(workspaceId);
     const repo = this.repoOf(workspace, projectId);
     const prefix = workspace.task.id
       ? ` Start the subject line with "${workspace.task.id}: ".`
       : '';
     if (workspace.repos.length === 1) {
-      this.sendToClaude(
+      return this.sendToClaude(
         workspace,
         `Commit the uncommitted changes in this worktree: stage them with git add -A and run git commit with a message you write from the changes.${prefix}`,
       );
-      return;
     }
     // Spec §21.5: that repository only, named with its worktree path.
     const name = this.projectName(repo.projectId);
     const at = shellQuote(repo.worktreePath);
-    this.sendToClaude(
+    return this.sendToClaude(
       workspace,
       `Commit the uncommitted changes in the ${name} repository only, whose worktree is ${repo.worktreePath}: stage them with git -C ${at} add -A and run git -C ${at} commit with a message you write from that repository's changes.${prefix} Don't commit in the workspace's other repositories.`,
     );
   }
 
-  private sendToClaude(workspace: Workspace, prompt: string): void {
-    this.terminals.sendToClaude(workspace.id, prompt);
+  /** A suspended Claude resumes first (spec §9.8). */
+  private sendToClaude(workspace: Workspace, prompt: string): Promise<void> {
+    return this.terminals.sendToClaude(workspace.id, prompt);
   }
 
   /**

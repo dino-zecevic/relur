@@ -9,6 +9,7 @@ import { projectWorktreeDir } from '@shared/projects';
 import type { Profile, Project } from '@shared/schemas';
 import { matchShortcut } from '@shared/shortcuts';
 import { backgroundNote, GLYPH_LABEL, glyphFor } from '@shared/status';
+import { SUSPENDED_TOOLTIP, suspendedNote } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import type { OtherWorktree, Workspace } from '@shared/workspaces';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -18,6 +19,7 @@ import { trpcClient, useTRPC } from '../trpc';
 import { button, inputClass, isMac, Kbd, keyHint } from '../ui/controls';
 import { useLaunching } from '../ui/launching';
 import { StatusGlyph } from '../ui/StatusGlyph';
+import { useSuspended } from '../ui/suspended';
 import { ago } from '../ui/time';
 import { SETUP_TAB, SKILLS_TAB, WORKFLOW_TAB, WORKSPACES_TAB } from '../view';
 import { ProjectEditor, useOpenInEditor } from './EditorPicker';
@@ -94,6 +96,7 @@ export function ProjectView({
     return () => window.removeEventListener('keydown', listener, true);
   }, []);
   const trpc = useTRPC();
+  const suspendedWorkspaces = useSuspended();
   const projectShell = useMutation(
     trpc.sessions.projectShell.mutationOptions({ onSuccess: onSessionOpened }),
   );
@@ -140,14 +143,37 @@ export function ProjectView({
     ['Remote', project.remote ?? 'none'],
     ['Worktrees', `${projectWorktreeDir(profile, project)}/`],
   ];
-  // The project's running Claude sessions (spec §6.14), only while any runs.
+  // The project's running Claude sessions (spec §6.14), only while any runs,
+  // and how many are suspended (§9.8), which use none.
   const used = projectMemory(memory, project.id);
-  if (used) {
+  const suspendedCount =
+    workspaces.filter((w) => suspendedWorkspaces.has(w.id)).length +
+    sessions.filter((s) => s.kind === 'claude' && s.status === 'suspended').length;
+  if (used || suspendedCount > 0) {
     details.push([
       'Memory',
-      `${formatBytes(used.bytes)} · ${used.sessions} ${used.sessions === 1 ? 'session' : 'sessions'}`,
+      [
+        used
+          ? `${formatBytes(used.bytes)} · ${used.sessions} ${used.sessions === 1 ? 'session' : 'sessions'}`
+          : 'None running',
+        ...(suspendedCount > 0 ? [suspendedNote(suspendedCount)] : []),
+      ].join(' · '),
     ]);
   }
+  // A main checkout's Claude tab: Keep Claude Running, remembered per project (spec §9.8).
+  const kept = useQuery(trpc.sessions.keptMainCheckouts.queryOptions());
+  const keptHere = kept.data?.includes(project.id) ?? false;
+  const claudeTabMenu = async () => {
+    const choice = await trpcClient.ui.contextMenu.mutate({
+      items: [{ id: 'keepRunning', label: 'Keep Claude Running', checked: keptHere }],
+    });
+    if (choice !== 'keepRunning') return;
+    await trpcClient.sessions.setMainCheckoutKept.mutate({
+      projectId: project.id,
+      on: !keptHere,
+    });
+    void kept.refetch();
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-canvas">
@@ -336,6 +362,7 @@ export function ProjectView({
                 active={session.id === tab}
                 onSelect={() => onSelectTab(session.id)}
                 onClose={() => close.mutate({ sessionId: session.id })}
+                onContextMenu={session.kind === 'claude' ? () => void claudeTabMenu() : undefined}
               />
             ))}
           </div>
@@ -349,7 +376,11 @@ export function ProjectView({
 
       {active ? (
         <div className="min-h-0 flex-1 bg-term">
-          <TerminalView key={active.id} sessionId={active.id} />
+          <TerminalView
+            key={`${active.id}:${active.generation}`}
+            sessionId={active.id}
+            resuming={active.status === 'suspended' || active.resuming}
+          />
         </div>
       ) : tab === WORKFLOW_TAB ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-6">
@@ -403,6 +434,7 @@ function WorkspaceTable({
   onNewWorkspace: (() => void) | null;
 }) {
   const launching = useLaunching();
+  const suspended = useSuspended();
   // The Memory column sorts (spec §6.14): largest first, smallest first, then as listed.
   // Workspaces without a running session stay last.
   const [sort, setSort] = useState<MemorySort>('none');
@@ -517,6 +549,12 @@ function WorkspaceTable({
                   {backgroundNote(w.state, w.background) ? (
                     <span data-background className="text-fg-subtle">
                       · {backgroundNote(w.state, w.background)}
+                    </span>
+                  ) : null}
+                  {/* Suspended to save memory (spec §9.8). */}
+                  {suspended.has(w.id) ? (
+                    <span data-suspended title={SUSPENDED_TOOLTIP} className="text-fg-subtle">
+                      · Suspended
                     </span>
                   ) : null}
                 </span>

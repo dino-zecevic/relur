@@ -56,8 +56,14 @@ const openLink = (uri: string) => void trpcClient.shell.openExternal.mutate({ ur
 export function TerminalView({
   sessionId,
   conversation,
+  resuming = false,
 }: {
   sessionId: string;
+  /**
+   * A suspended Claude that resumes (spec §9.8): "Resuming…" over the
+   * terminal, and keys typed meanwhile aren't sent, with a note saying so.
+   */
+  resuming?: boolean;
   /** A workspace's Claude tab: prompt markers, navigator and Copy buttons (spec §6.8). */
   conversation?: {
     workspaceId: string;
@@ -82,6 +88,12 @@ export function TerminalView({
   const onAidsRef = useRef(onAids);
   onAidsRef.current = onAids;
   const [fontReady, setFontReady] = useState(fontsLoaded);
+  const resumingRef = useRef(resuming);
+  resumingRef.current = resuming;
+  const [blocked, setBlocked] = useState(false);
+  useEffect(() => {
+    if (!resuming) setBlocked(false);
+  }, [resuming]);
   useEffect(() => {
     if (!fontReady) void fontsReady.then(() => setFontReady(true));
   }, [fontReady]);
@@ -254,7 +266,15 @@ export function TerminalView({
     const queued: string[] = [];
     const send = (data: string) =>
       port?.postMessage({ type: 'input', data } satisfies TerminalClientMessage);
-    term.onData((data) => (port ? send(data) : queued.push(data)));
+    term.onData((data) => {
+      // Resuming: keys go nowhere, and the overlay says so (spec §9.8).
+      if (resumingRef.current) {
+        setBlocked(true);
+        return;
+      }
+      if (port) send(data);
+      else queued.push(data);
+    });
 
     openTerminalPort(sessionId)
       .then((opened) => {
@@ -318,6 +338,20 @@ export function TerminalView({
     // gutter for prompt numbers (components.md).
     <div className={`relative h-full w-full bg-term pt-2 ${workspaceId ? 'pl-9' : 'pl-3.5'}`}>
       <div ref={containerRef} data-terminal={sessionId} className="h-full w-full" />
+      {resuming ? (
+        <div
+          data-resuming
+          role="status"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 bg-term/85 text-md text-fg-muted"
+        >
+          <span>Resuming…</span>
+          {blocked ? (
+            <span data-resuming-blocked className="text-sm text-fg-subtle">
+              Keys you type now aren't sent. Type again once Claude is ready.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {nav.count > 0 && !nav.hidden ? (
         <div
           data-prompt-navigator

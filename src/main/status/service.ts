@@ -107,7 +107,7 @@ export class StatusService {
 
   constructor(
     private readonly records: WorkspaceRecords,
-    host: SessionHost,
+    private readonly host: SessionHost,
     private readonly platform: StatusPlatform,
     private readonly answerChecksMs: readonly number[] = ANSWER_CHECKS_MS,
   ) {
@@ -147,6 +147,9 @@ export class StatusService {
   handleHook(message: HookMessage): void {
     const workspace = this.findWorkspace(message);
     if (!workspace) return;
+    // A suspended Claude's end, and the old process's end while it resumes,
+    // leave the state as it was (spec §9.8).
+    if (message.event === 'SessionEnd' && this.suspendedOrResuming(workspace.id)) return;
     this.clearAnswered(workspace.id);
     const payload = record(message.payload);
     this.records.setClaudeSession(
@@ -273,8 +276,21 @@ export class StatusService {
   }
 
   /** The workspace an event belongs to: by its id, else by the working directory. */
+  private suspendedOrResuming(workspaceId: string): boolean {
+    return this.host
+      .list()
+      .some(
+        (s) =>
+          s.workspaceId === workspaceId &&
+          s.kind === 'claude' &&
+          (s.status === 'suspended' || s.resuming),
+      );
+  }
+
   private findWorkspace(message: HookMessage): Workspace | null {
     if (message.workspaceId) return this.records.get(message.workspaceId);
+    // A main checkout's Claude (spec §9.8): its state is the suspend service's own.
+    if (message.sessionId && this.host.has(message.sessionId)) return null;
     const cwd = str(record(message.payload).cwd);
     return cwd ? (this.records.list().find((w) => w.worktreePath === cwd) ?? null) : null;
   }

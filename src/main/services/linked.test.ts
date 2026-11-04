@@ -105,6 +105,7 @@ describe('WorkspaceRecords with linked repositories', () => {
       background: 0,
       unfinished: null,
       lastPrompt: null,
+      keepRunning: false,
       stateSince: null,
       claudeSessionId: null,
       ports: null,

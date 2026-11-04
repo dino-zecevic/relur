@@ -38,6 +38,8 @@ export interface Workspace {
   unfinished: Unfinished | null;
   /** The last prompt sent to its Claude (UserPromptSubmit), for the overview (spec §9.7). */
   lastPrompt: string | null;
+  /** Keep running: its Claude is never suspended when idle (spec §9.8). */
+  keepRunning: boolean;
   /** Claude Code's session id, from hook payloads; used for `--resume` (spec §9.4). */
   claudeSessionId: string | null;
   /** Its block of ports (spec §8.4); null until allocated. */

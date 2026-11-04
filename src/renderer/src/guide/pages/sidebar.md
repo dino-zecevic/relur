@@ -8,6 +8,7 @@ Right-click a project for **Remove from <profile>…**. Right-click a workspace 
 - **{{reveal}}**: its worktree folder;
 - **Copy path**: the worktree's full path;
 - **Copy branch name**;
+- **Keep Claude Running**: its Claude is never [suspended](suspend) when idle; a checkmark shows it's on;
 - **Delete workspace…**: see [Deleting a workspace](delete-workspace).
 
 ## With the keyboard
@@ -30,6 +31,7 @@ Each workspace shows its [status glyph](status-glyphs), its title (or name), a *
 
 - while Claude works, how long it has been working, or **2 in background** while it waits for its background agents;
 - when it's done with commands still running, **1 running**, or **Done · 1 running** until you've opened it (see [Work in the background](status-glyphs#work-in-the-background));
+- when Claude is [suspended](suspend) to save memory, **Suspended**, next to the state's glyph;
 - otherwise, when it has a glyph, a short state in its color: **Permission**, **Input**, **Approve**, **Done**, **Exited**, **Error** or **Unfinished**; at a workflow gate, the gate's label instead of **Approve**;
 - with no glyph and a [workflow](workflows), the task's current status.
 

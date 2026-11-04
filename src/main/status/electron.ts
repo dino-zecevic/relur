@@ -15,6 +15,8 @@ export const titleWithCount = (title: string, count: number) =>
 interface Visible {
   workspaceId: string | null;
   claudeTab: boolean;
+  /** The terminal session its view shows, for a main checkout's Claude tab (spec §9.8). */
+  sessionId?: string | null;
 }
 
 /**
@@ -47,6 +49,30 @@ export class ElectronStatusPlatform implements StatusPlatform {
 
   setVisible(webContentsId: number, visible: Visible): void {
     this.visible.set(webContentsId, visible);
+    this.events.emit('shown');
+  }
+
+  /**
+   * What windows that are visible and not minimized show (spec §9.8): their
+   * workspaces, and the terminal sessions of their shown tabs.
+   */
+  shown(): { workspaces: Set<string>; sessions: Set<string> } {
+    const workspaces = new Set<string>();
+    const sessions = new Set<string>();
+    for (const [id, shown] of this.visible) {
+      const contents = webContents.fromId(id);
+      const win = contents ? BrowserWindow.fromWebContents(contents) : null;
+      if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) continue;
+      if (shown.workspaceId) workspaces.add(shown.workspaceId);
+      if (shown.sessionId) sessions.add(shown.sessionId);
+    }
+    return { workspaces, sessions };
+  }
+
+  /** A window reported what it shows. */
+  onShown(listener: () => void): () => void {
+    this.events.on('shown', listener);
+    return () => this.events.off('shown', listener);
   }
 
   claudeTabInFocus(workspaceId: string): boolean {

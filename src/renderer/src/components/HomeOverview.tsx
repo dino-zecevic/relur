@@ -278,7 +278,7 @@ export function HomeOverview({
               workflow={w.workflow}
               state={w.state}
               claudeRunning={sessions.some(
-                (s) => s.workspaceId === w.id && s.kind === 'claude' && s.status === 'running',
+                (s) => s.workspaceId === w.id && s.kind === 'claude' && s.status !== 'exited',
               )}
               className={(primary) => actionClass(primary ? 'primary' : 'secondary')}
               onError={setError(w.id)}
