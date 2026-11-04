@@ -15,6 +15,7 @@ import {
 } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, iconButton, inputClass, isMac, keyHint } from '../ui/controls';
+import { takeRequest } from '../ui/open-requests';
 import { remember } from '../ui/remember';
 import { PrimaryTag } from './DeleteWorkspaceDialog';
 import { useOpenInEditor } from './EditorPicker';
@@ -265,6 +266,15 @@ export function PrBadge({ pr }: { pr: PrStatus }) {
 }
 
 /**
+ * Home's Commit… (spec §6.7) opens the workspace with the commit box in
+ * focus: the first commit box to show takes the request. Later, so the
+ * terminal that comes up with the workspace doesn't take the focus back.
+ */
+const commitFocus = (workspaceId: string) => (box: HTMLTextAreaElement | null) => {
+  if (box && takeRequest(workspaceId, 'commit')) setTimeout(() => box.focus(), 150);
+};
+
+/**
  * Commit → Push → Create PR → PR badge (spec §14.1), one step at a time.
  * Projects without a remote only commit.
  */
@@ -325,6 +335,7 @@ function FinishControls({ workspace }: { workspace: Workspace }) {
       {s.uncommitted > 0 ? (
         <>
           <textarea
+            ref={commitFocus(workspace.id)}
             aria-label="Commit message"
             className={`${inputClass} h-auto min-h-14 py-1.5 text-sm`}
             spellCheck={false}
@@ -499,6 +510,7 @@ function RepoControls({
       {s.uncommitted > 0 ? (
         <>
           <textarea
+            ref={commitFocus(workspace.id)}
             aria-label={`Commit message for ${name}`}
             className={`${inputClass} h-auto min-h-14 py-1.5 text-sm`}
             spellCheck={false}

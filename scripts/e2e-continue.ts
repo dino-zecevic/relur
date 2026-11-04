@@ -304,12 +304,20 @@ exec sleep 600
       await page.eval(`(${row('Alpha two')}).querySelector('[role=img]')?.getAttribute('title')`),
       `Claude didn't finish when ${BRAND.displayName} closed`,
     );
-    // Delta in Personal: under Home's Needs you.
+    // Delta in Personal: under Home's Needs you (spec §6.7), with Continue and
+    // Dismiss; Dismiss drops the marker and sends nothing.
     await pressKey(page, 'Digit2', CMD);
+    const homeDelta = `document.querySelector('[data-home-row="${ids.Delta}"]')`;
     await page.waitFor(
-      `document.querySelectorAll('[data-needs-unfinished]').length === 1`,
+      `${homeDelta}?.dataset.homeSection === 'needs' && ${homeDelta}.innerText.includes('Unfinished')`,
       "Delta under Home's Needs you",
     );
+    assert.equal(
+      await page.eval(`!!${homeDelta}.querySelector('[data-home-action=continue]')`),
+      true,
+    );
+    await page.eval(`${homeDelta}.querySelector('[data-home-action=dismiss]').click()`);
+    await page.waitFor(`!${homeDelta}`, 'Delta dismissed');
     await pressKey(page, 'Digit1', CMD);
 
     // The bar: Continue in Bravo sends the prompt; Dismiss in Alpha two sends nothing.
@@ -417,8 +425,11 @@ exec sleep 600
       `document.querySelector('[data-unfinished-bar="commands"]')?.innerText.includes('1 background command was stopped.')`,
       "Delta's bar",
     );
-    await clickButtonText(page, 'Continue', `document.querySelector('[data-unfinished-bar]')`);
-    await page.waitFor(`!document.querySelector('[data-unfinished-bar]')`, 'Delta continued');
+    // Continue from Home's row sends the prompt, as the bar's does.
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!${homeDelta}`, 'Delta on Home');
+    await page.eval(`${homeDelta}.querySelector('[data-home-action=continue]').click()`);
+    await page.waitFor(`(${marker('Delta')}) === null`, 'Delta continued');
     for (let i = 0; i < 50 && continued('delta') < 1; i++) await sleep(100);
     assert.equal(continued('delta'), 1);
     await pressKey(page, 'Digit1', CMD);

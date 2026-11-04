@@ -143,11 +143,6 @@ export const SHORTCUTS = {
     chords: [{ mod: true, code: 'KeyE' }],
     other: [{ ctrl: true, shift: true, code: 'KeyE' }],
   },
-  homePanel: {
-    group: 'Workspaces',
-    label: 'Hide or show Quick actions on Home',
-    chords: [{ mod: true, code: 'Period' }],
-  },
 
   newShell: {
     group: 'Tabs and terminals',
@@ -164,7 +159,7 @@ export const SHORTCUTS = {
   },
   terminalTab: {
     group: 'Tabs and terminals',
-    label: 'Terminal tab 1–9',
+    label: 'Terminal tab 1–9; on Home, Overview and Terminal',
     chords: digits({ ctrl: true }),
     range: true,
     platform: 'mac',

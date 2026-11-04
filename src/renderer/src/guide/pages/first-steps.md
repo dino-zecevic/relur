@@ -14,15 +14,7 @@ You can quit at any time: Claude continues the same conversations when {{app}} s
 
 ## Home
 
-Each profile also has a Home terminal: a shell in your home folder that uses the profile's account. It's there for anything that isn't a task. <kbd>{{key:home}}</kbd>
-
-A panel at its top right never takes the focus from the terminal. It shows one of three things:
-
-- **Get started**, while the profile has no projects: Add project, New workspace and how Claude starts.
-- **Needs you**, when workspaces wait for you or were left [unfinished](resume#the-unfinished-marker), oldest first; click one to open it.
-- **Quick actions** otherwise: **New workspace**, **Add project**, **Start Claude here** and your four most recent workspaces.
-
-**Hide** or <kbd>{{key:homePanel}}</kbd> folds it into a small button in the Home bar, and back. If the Home shell exits, **Start again** starts a new one.
+Each profile has a Home <kbd>{{key:home}}</kbd>. Its **Overview** shows what needs you, what is working, what is ready to ship and what can be cleaned up; its **Terminal** is a shell in your home folder that uses the profile's account, for anything that isn't a task. A profile without projects offers **Add your first project** there. See [Home](home).
 
 ## Your team's skills and workflow
 

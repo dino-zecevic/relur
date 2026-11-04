@@ -286,19 +286,22 @@ The terminal text is never restyled; everything below is an xterm decoration or 
 - **Scrollbar ticks:** 6×2 in the profile color at each prompt; the current one is at full opacity, the rest at 55%.
 - None of these take focus. Their mouse targets sit above the terminal only where they're drawn.
 
-## Home overlay (profile home)
+## Home (profile home)
 
-- 300px wide, top-right, 46px from the top of the terminal area. `bg-raised border-line-strong rounded-lg shadow-overlay`. Header: title, count badge (when > 0), "Hide ⌘.". Footer: "Keys go to the terminal…" hint.
-- **Content depends on the profile's situation**, re-evaluated live:
-  - **Needs you** (≥1 workspace needs permission, waits for input or awaits approval):
-    - Leads with one row per such workspace. Each row has the status glyph, the id and title, what it's waiting for (status color, e.g. "Permission to run pnpm vitest · api-service"), and since when (mono, right-aligned). Oldest first.
-    - Unfinished workspaces (spec §9.7) are listed among them with the Unfinished glyph, "Claude didn't finish when Relur closed · <project>" in `st-input` and the time Claude stopped. They count in the overlay's badge but not in the profile tab's or the Dock's.
-    - Clicking a row (or Enter on it) opens that workspace's Claude tab.
-    - Quick actions follow as one compact row of 24px ghost buttons.
-  - **Nothing needs you:** full-size quick actions (New workspace ⌘N, Add project ⌘O, Start Claude here ⌘L), then "Recent workspaces": up to 4 rows with glyph, id, title and last activity.
-  - **No projects:** "Get started" in three numbered steps: Add project → New workspace → Claude starts in the workspace. The current step is filled and the rest are outlined. Add project is the primary button; Start Claude here is a ghost button. The sidebar shows a matching dashed "No projects yet" note.
-- **Never takes focus:** typing always goes to the terminal. ⌘K moves focus into the overlay (the first row gets the focus ring); ↑↓ and Enter work there. Esc, or any action, returns focus to the terminal. Clicks run the action without moving the terminal cursor.
-- **Collapse:** ⌘. or Hide collapses it to a 26px pill in the header strip, which never covers terminal text. The pill reads "Needs you" plus the amber count when something needs you, and "Quick actions" otherwise. The collapsed state is remembered per profile.
+Spec §6.7. `HomeView.tsx` (tabs, Terminal) and `HomeOverview.tsx` (Overview).
+
+- **Tabs:** the workspace tab strip (`h-9 bg-surface`, tabs `h-7.5 rounded-t-md`, active `bg-term border-line`): **Overview** (`≡`, ⌃1) and **Terminal** (`›_`, ⌃2; the hints on macOS only). The Terminal tab's tooltip names the shell's folder and `CLAUDE_CONFIG_DIR`. The terminal stays mounted, hidden, while the Overview shows.
+- **Layout:** `bg-term`, scrolling; a wrapping row (`gap 40px 56px`, padding `26px 32px 40px 36px`): the sections column (`flex 1 1 600px`, max 860px, 30px between sections) and the side column (`flex 1 0 232px`, a grid of `minmax(232px, 1fr)` columns, `gap 26px 40px`). When the window is too narrow for both, the side column wraps below the sections and its two groups sit side by side.
+- **Section header:** 28px: title `text-base font-semibold`, count `font-mono text-sm text-fg-subtle`, a `bg-line` rule filling the rest, and Clean up's "Delete n merged workspaces" (secondary, 26px). Needs you ends with the hint row: a bordered `⌘J` kbd and "jumps to the next one" (`text-sm text-fg-subtle`).
+- **Row:** `px-2.5 py-2 rounded-md gap-3`, the column pulled out by 10px so glyphs align with the title. Status glyph (top-aligned, 3px down); line 1: task id `font-mono text-sm text-fg-subtle`, title `text-base font-medium` (Ready to ship `font-semibold`, Clean up `text-fg-muted`), truncated; line 2 `text-sm text-fg-muted`: project `font-mono 11.5px text-fg-subtle`, `·`, then the details: the state in its status color `font-medium` (Needs permission, Waiting for input), "At <gate>" with the gate in `st-approval`, "Unfinished" in `text-fg font-medium`. Working now separates each detail with `·`. Then memory (`font-mono 11.5px text-fg-subtle`, Working now) and the actions.
+- **Glyphs:** the workspace's own (with the Unfinished marker) under Needs you; working under Working now; done (filled dot) under Ready to ship; exited (hollow square) under Clean up.
+- **Actions:** 26px, `px-2.5 rounded-[5px] text-md`: secondary (`border-line-strong`, hover `bg-raised`), primary (a gate's answer: `bg-fg text-on-fg`), ghost (Dismiss, Working now's Open), danger text (Delete). Hover-only actions (Open under Working now, Delete under Clean up) show on row hover and while the row has focus; hidden they take no room.
+- **States:** hover `bg-band`; keyboard focus on a row `bg-band` plus an inset 1.5px `focus` ring; focus on an action a 2px `term` gap and a 1.5px `focus` ring outside it.
+- **Show all n:** under a section with more than 5 rows, `text-sm text-fg-muted`, hover `text-fg`; "Show fewer" when open.
+- **At a glance / Quick actions:** group labels `text-2xs font-medium tracking-[0.07em] uppercase text-fg-subtle`, 28px. Project rows 28px: name `font-mono text-md text-fg`, count `font-mono text-sm text-fg-muted`, "+ n linked" `text-sm text-fg-subtle`; hover `bg-band`; click opens the project. Quick action rows 30px: icon (`+`, `▢`, `?`) `text-fg-subtle`, label `text-md`, kbd; hover `bg-band-strong`. New workspace is disabled without projects.
+- **Empty:** centred, max 400px: "All clear" (17px semibold), the line under it (`text-base text-fg-muted`), then the quick actions as 38px rows between `border-line` rules (`px-1`, kbd `font-mono text-xs`). Without projects: "No projects yet", the line about projects, a primary "Add your first project ⌘O" (30px) and the Guide row.
+- **Keyboard:** the Overview takes focus when it shows (no ring). ↑ ↓ move across the rows of all sections (from the Overview itself, ↓ goes to the first row and ↑ to the last); ↵ on a row opens it; Tab goes from a row to its actions, then to the next row.
+- **Delete n merged workspaces:** a dialog titled "Delete n merged workspaces?", one block per workspace (task id, title, project), its running-sessions warning and one repository card per repository (as in Delete workspace), Cancel focused, danger "Delete n workspaces" ("Delete anyway" after git refuses one).
 
 ## Project view (landing page)
 

@@ -1,0 +1,567 @@
+/**
+ * End-to-end test of Home (spec §6.7): its Overview and Terminal tabs. Every
+ * section of the Overview with its actions (Open, Review and a gate's answer,
+ * Commit…, Push, View PR, Delete and Delete n merged workspaces), Show all,
+ * the keyboard (↑↓ across sections, ↵, Tab to a row's actions, hover actions
+ * on focus), At a glance, the empty states (All clear, Add your first
+ * project), and the Terminal tab (⌃1 ⌃2, ⌘L, ⌘0). Unfinished rows are
+ * covered by e2e-continue. Runs with a throwaway HOME and a fake `claude`.
+ *
+ *   tsx scripts/e2e-home.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
+ */
+import './lib/clean-env';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { appConfigDir } from '../src/main/paths';
+import { createFixture } from '../src/main/test-support/git-fixtures';
+import { SEED_CONFIG } from '../src/main/test-support/seed-config';
+import { envVar } from '../src/shared/brand';
+import {
+  CMD,
+  clickButtonText,
+  clickLabel,
+  dialogText,
+  launchApp,
+  MOD,
+  pressKey,
+  pressShortcut,
+  type RunningApp,
+  screenshot,
+  sleep,
+  submitDialog,
+  typeInField,
+  typeInTerminal,
+  waitForFile,
+  withDisplayEnv,
+} from './lib/app-driver';
+
+const args = process.argv.slice(2);
+const screenshotDir = args.find((a) => a.startsWith('--screenshots='))?.split('=')[1];
+const devMode = args.includes('--dev');
+const electronArgs = args.filter((a) => !a.startsWith('--screenshots=') && a !== '--dev');
+const isMac = process.platform === 'darwin';
+
+/** A Home row by workspace id, as an expression. */
+const homeRow = (id: string) => `document.querySelector('[data-home-row="${id}"]')`;
+/** The ids of a section's rows, in order, as an expression. */
+const sectionIds = (section: string) =>
+  `[...document.querySelectorAll('[data-home-list=${section}] [data-home-row]')].map((r) => r.dataset.homeRow)`;
+const activeRow = `document.activeElement?.dataset?.homeRow ?? null`;
+const hasNoThanks = `[...document.querySelectorAll('button')].some((b) => b.textContent === 'No thanks')`;
+
+async function main() {
+  const fx = createFixture();
+  let app: RunningApp | undefined;
+  try {
+    const { origin, clone: web } = fx.cloneWithRemote('web', 'main');
+    const api = fx.localRepo('api');
+    fs.writeFileSync(path.join(fx.root, '.zshrc'), '');
+    // A stand-in for Claude: passes the setup check, runs SessionStart, notes
+    // its workspace and worktree, turns typed words into hooks and records
+    // every other line typed into it.
+    const fakeClaude = path.join(fx.root, 'bin', 'fake-claude');
+    fs.mkdirSync(path.dirname(fakeClaude));
+    fs.writeFileSync(
+      fakeClaude,
+      `#!/bin/sh
+case "$1" in
+  --version) echo '9.9.9 (Claude Code)'; exit 0 ;;
+  auth) printf '{"loggedIn":true,"email":"test@example.com","configDirectory":"%s"}\\n' "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; exit 0 ;;
+esac
+settings=""; sid="fake-$$"; prev=""
+for arg in "$@"; do
+  [ "$prev" = --settings ] && settings="$arg"
+  { [ "$prev" = --session-id ] || [ "$prev" = --resume ]; } && sid="$arg"
+  prev="$arg"
+done
+helper=""
+[ -n "$settings" ] && helper=$(sed -n "s/.*\\"command\\": \\"'\\(.*\\)' hook SessionStart\\".*/\\1/p" "$settings")
+hook() { [ -n "$helper" ] && printf '%s' "$2" | "$helper" hook "$1"; }
+id="\${${envVar('WORKSPACE_ID')}:-home}"
+echo "$PWD" > "$HOME/tree-$id.txt"
+hook SessionStart "{\\"session_id\\":\\"$sid\\"}" > /dev/null
+while IFS= read -r line; do
+  case "$line" in
+    prompt) hook UserPromptSubmit '{"prompt":"Fix the login"}' ;;
+    permission) hook Notification '{"message":"Claude needs your permission to use Bash"}' ;;
+    input) hook Notification '{"notification_type":"idle_prompt","message":"Claude is waiting for your input"}' ;;
+    stop) hook Stop '{"last_assistant_message":"Done."}' ;;
+    *) printf '%s\\n' "$line" >> "$HOME/input-$id.txt" ;;
+  esac
+done
+exec sleep 600
+`,
+      { mode: 0o755 },
+    );
+    fs.writeFileSync(path.join(fx.root, '.claude.json'), '{}');
+    fs.mkdirSync(path.join(fx.root, '.claude-personal'));
+    fs.writeFileSync(path.join(fx.root, '.claude-personal', '.claude.json'), '{}');
+    const configFile = path.join(
+      appConfigDir({ platform: process.platform, env: {}, homeDir: fx.root }),
+      'config.json',
+    );
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify({
+        ...SEED_CONFIG,
+        profiles: SEED_CONFIG.profiles.map((p) => ({
+          ...p,
+          claude: { command: fakeClaude, args: [] },
+          ...(p.id === 'work'
+            ? {
+                // A workflow with a gate and its answer (spec §13.4, §13.5).
+                workflow: {
+                  file: 'docs/specs/*/spec.md',
+                  match: { field: 'branch', equals: 'branch' },
+                  statusField: 'status',
+                  statuses: [
+                    { value: 'draft', label: 'Draft', kind: 'step' },
+                    {
+                      value: 'review',
+                      label: 'Spec review',
+                      kind: 'gate',
+                      answer: { label: 'Approve spec', prompt: 'approved' },
+                    },
+                    { value: 'done', label: 'Done', kind: 'final' },
+                  ],
+                },
+                // The PR status per branch, from a file the test writes (spec §12.3).
+                pr: {
+                  statusCommand: `cat "$HOME/pr-$${envVar('BRANCH')}" 2>/dev/null || true`,
+                },
+              }
+            : {}),
+        })),
+        projects: [
+          {
+            id: 'web',
+            profileId: 'work',
+            name: 'web',
+            repoPath: web,
+            remote: 'origin',
+            baseBranch: 'main',
+          },
+          { id: 'api', profileId: 'work', name: 'api', repoPath: api, remote: null },
+        ],
+      }),
+    );
+
+    app = await launchApp({ env: withDisplayEnv(fx.env), dev: devMode, electronArgs });
+    const { page, main: mainProcess } = app;
+    await mainProcess.eval(`(() => {
+      const { shell } = process.mainModule.require('electron');
+      globalThis.__opened = [];
+      shell.openExternal = async (url) => { globalThis.__opened.push(url); };
+    })()`);
+
+    // 1. Home opens on the Overview. Work has projects but no workspaces: All clear.
+    await page.waitFor(
+      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'empty'`,
+      'the Overview',
+    );
+    assert.equal(
+      await page.eval(
+        `document.querySelector('[data-home-tab=overview]').getAttribute('aria-selected')`,
+      ),
+      'true',
+    );
+    assert.match(await page.eval<string>(`document.querySelector('main').innerText`), /All clear/);
+    assert.equal(
+      await page.eval(
+        `[...document.querySelectorAll('[data-home-quick]')].map((b) => b.dataset.homeQuick).join()`,
+      ),
+      'New workspace,Add project,Guide',
+    );
+    assert.equal(
+      await page
+        .eval<string>(`document.querySelector('footer').innerText`)
+        .then((t) => /\bHome\b/.test(t)),
+      true,
+      'the status bar says Home',
+    );
+    await screenshot(page, screenshotDir, 'h1-all-clear.png');
+
+    // A profile without projects: Add your first project, which opens Add project.
+    await clickLabel(page, 'Select Personal');
+    await page.waitFor(
+      `!!document.querySelector('[data-home-action=add-first-project]')`,
+      'Add your first project',
+    );
+    await screenshot(page, screenshotDir, 'h2-no-projects.png');
+    await page.eval(`document.querySelector('[data-home-action=add-first-project]').click()`);
+    await page.waitFor(`${dialogText}.includes('Add project')`, 'the Add project dialog');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+    await clickLabel(page, 'Select Work');
+
+    // 2. The Terminal tab: the profile's home shell, ⌃2 and ⌃1 (Ctrl+Tab elsewhere).
+    const terminalShown = `[...document.querySelectorAll('[data-terminal][data-connected]')].some((t) => t.offsetParent)`;
+    if (isMac) await pressKey(page, 'Digit2', MOD.ctrl);
+    else await pressShortcut(page, 'cycleTabs');
+    await page.waitFor(terminalShown, 'the Terminal tab');
+    await page.waitFor(
+      `document.activeElement?.classList.contains('xterm-helper-textarea')`,
+      'the shell in focus',
+    );
+    assert.match(
+      await page.eval<string>(`document.querySelector('footer').innerText`),
+      /Home › Terminal/,
+    );
+    await typeInTerminal(page, `echo "$PWD" > "$HOME/home-shell.txt"`);
+    assert.equal(await waitForFile(path.join(fx.root, 'home-shell.txt')), fx.root);
+    await screenshot(page, screenshotDir, 'h3-terminal.png');
+    if (isMac) await pressKey(page, 'Digit1', MOD.ctrl);
+    else await pressShortcut(page, 'cycleTabs');
+    await page.waitFor(
+      `!(${terminalShown}) && !!document.querySelector('[data-home-overview]')`,
+      'the Overview again',
+    );
+    // ⌘L from the Overview starts Claude in the home shell, on the Terminal tab.
+    await pressShortcut(page, 'startClaude');
+    await page.waitFor(terminalShown, 'the Terminal tab for Start Claude here');
+    assert.equal(await waitForFile(path.join(fx.root, 'tree-home.txt')), fx.root);
+    await pressKey(page, 'KeyC', MOD.ctrl);
+    await sleep(300);
+    if (isMac) await pressKey(page, 'Digit1', MOD.ctrl);
+    else await pressShortcut(page, 'cycleTabs');
+
+    // 3. Workspaces in every state. Each is created with New workspace; the
+    // fake Claude says which workspace and worktree it runs in.
+    const ws: Record<string, { id: string; tree: string; branch: string }> = {};
+    const create = async (key: string, project: string, task: string) => {
+      const before = new Set(fs.readdirSync(fx.root).filter((f) => f.startsWith('tree-')));
+      await clickLabel(page, `New workspace in ${project}`);
+      await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'New workspace');
+      await typeInField(page, '#ws-task', task, false);
+      await sleep(600);
+      await submitDialog(page);
+      await page.waitFor(
+        `!document.querySelector('dialog[open]')`,
+        `the workspace ${task}`,
+        30_000,
+      );
+      let file: string | undefined;
+      for (const end = Date.now() + 20_000; !file && Date.now() < end; await sleep(100)) {
+        file = fs
+          .readdirSync(fx.root)
+          .find((f) => f.startsWith('tree-') && f !== 'tree-home.txt' && !before.has(f));
+      }
+      if (!file) throw new Error(`Claude didn't start in ${task}`);
+      const id = file.slice('tree-'.length, -'.txt'.length);
+      const tree = (await waitForFile(path.join(fx.root, file))).trim();
+      const branch = fx.git(tree, 'branch', '--show-current').trim();
+      ws[key] = { id, tree, branch };
+      await page.waitFor(
+        `[...document.querySelectorAll('[data-terminal][data-connected]')].some((t) => t.offsetParent)`,
+        `the terminal of ${task}`,
+      );
+    };
+    const sidebarState = (key: string) =>
+      `(document.querySelector('nav [data-nav-key="w:${ws[key]?.id}"]')?.title.split('\\n')[1] ?? '')`;
+    const waitState = (key: string, state: string) =>
+      page.waitFor(`${sidebarState(key)}.startsWith(${JSON.stringify(state)})`, `${key}: ${state}`);
+    const commitIn = (key: string, file: string) => {
+      const tree = ws[key]?.tree as string;
+      fs.writeFileSync(path.join(tree, file), `${file}\n`);
+      fx.git(tree, 'add', '-A');
+      fx.git(tree, 'commit', '-q', '-m', `Add ${file}`);
+    };
+    const pr = (key: string, state: string, n: number) =>
+      fs.writeFileSync(
+        path.join(fx.root, `pr-${ws[key]?.branch}`),
+        JSON.stringify({ state, url: `https://git.example.com/acme/web/pull/${n}` }),
+      );
+
+    // Needs you: permission, then input, then a gate (oldest first).
+    await create('perm', 'web', 'ABC-1 Fix the flaky test');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'permission');
+    await waitState('perm', 'Needs permission');
+    await create('input', 'web', 'ABC-2 Pick a color');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'input');
+    await waitState('input', 'Waiting for input');
+    await create('gate', 'web', 'ABC-3 Checkout redesign');
+    const spec = path.join(ws.gate?.tree as string, 'docs', 'specs', 'checkout', 'spec.md');
+    fs.mkdirSync(path.dirname(spec), { recursive: true });
+    fs.writeFileSync(spec, `---\nbranch: ${ws.gate?.branch}\nstatus: review\n---\n# Checkout\n`);
+    await typeInTerminal(page, 'prompt');
+    await sleep(1500);
+    await typeInTerminal(page, 'stop');
+    await waitState('gate', 'Awaiting approval');
+
+    // Working now: six, so the section shows five and Show all 6.
+    for (const [i, key] of ['w1', 'w2', 'w3', 'w4', 'w5', 'w6'].entries()) {
+      await create(key, 'api', `ABC-${20 + i} Working ${i + 1}`);
+      await typeInTerminal(page, 'prompt');
+      await waitState(key, 'Working');
+    }
+
+    // Ready to ship: uncommitted files, an unpushed commit (pushed from Home,
+    // then its open PR), and two merged ones for Clean up.
+    await create('commit', 'web', 'ABC-4 Dark mode tokens');
+    fs.writeFileSync(path.join(ws.commit?.tree as string, 'tokens.css'), ':root {}\n');
+    await typeInTerminal(page, 'stop');
+    await waitState('commit', 'Done');
+    await create('push', 'web', 'ABC-5 Search filters');
+    commitIn('push', 'filters.txt');
+    pr('push', 'open', 212);
+    await typeInTerminal(page, 'stop');
+    await waitState('push', 'Done');
+    for (const [key, n] of [
+      ['merged1', 198],
+      ['merged2', 187],
+    ] as const) {
+      await create(key, 'web', `ABC-${n} Merged ${n}`);
+      commitIn(key, `${key}.txt`);
+      pr(key, 'merged', n);
+      await typeInTerminal(page, 'stop');
+      await waitState(key, 'Done');
+    }
+
+    // 4. ⌘0: the Overview with every section.
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(
+      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'sections'`,
+      'the sections',
+    );
+    await page.waitFor(
+      `(${sectionIds('needs')}).join() === ${JSON.stringify([ws.perm?.id, ws.input?.id, ws.gate?.id].join())}`,
+      'Needs you, oldest first',
+    );
+    const needsText = await page.eval<string>(
+      `document.querySelector('[data-home-list=needs]').innerText`,
+    );
+    assert.match(needsText, /Needs permission/);
+    assert.match(needsText, /Claude needs your permission to use Bash/);
+    assert.match(needsText, /Waiting for input/);
+    assert.match(needsText, /At\s*Spec review/);
+    assert.match(needsText, /jumps to the next one/);
+    // Working now: five shown, Show all 6, with how long and the memory.
+    assert.equal(await page.eval(`(${sectionIds('working')}).length`), 5);
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-home-list=working]').innerText`),
+      /Working now\s*6[\s\S]*working for less than a minute[\s\S]*Show all 6/,
+    );
+    await page.waitFor(
+      `[...document.querySelectorAll('[data-home-list=working] [data-home-memory]')].some((m) => /^\\d+(\\.\\d)? (MB|GB)$/.test(m.textContent))`,
+      'the memory of working workspaces',
+      30_000,
+    );
+    await clickButtonText(page, 'Show all 6');
+    await page.waitFor(`(${sectionIds('working')}).length === 6`, 'all six');
+    await clickButtonText(page, 'Show fewer');
+    // Ready to ship: the merged ones too until they are pushed and their PR is known.
+    const shipping = ['commit', 'push', 'merged1', 'merged2'].map((k) => ws[k]?.id).sort();
+    await page.waitFor(
+      `(${sectionIds('ship')}).sort().join() === ${JSON.stringify(shipping.join())}`,
+      'Ready to ship',
+      20_000,
+    );
+    assert.match(
+      await page.eval<string>(`${homeRow(ws.commit?.id as string)}.innerText`),
+      /1 file not committed/,
+    );
+    assert.match(
+      await page.eval<string>(`${homeRow(ws.push?.id as string)}.innerText`),
+      /1 commit not pushed/,
+    );
+    // At a glance: the projects with their counts.
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-home-glance]').innerText`),
+      /web\s*7[\s\S]*api\s*6/,
+    );
+    await screenshot(page, screenshotDir, 'h4-overview.png');
+    // For comparing with the design: its frames, 1440×900 dark and light, and 900×1120.
+    if (screenshotDir) {
+      const frame = (width: number, height: number, theme: 'dark' | 'light') =>
+        mainProcess.eval(`(() => {
+          const { BrowserWindow, nativeTheme } = process.mainModule.require('electron');
+          nativeTheme.themeSource = ${JSON.stringify(theme)};
+          BrowserWindow.getAllWindows()[0].setContentSize(${width}, ${height});
+        })()`);
+      if (await page.eval(hasNoThanks)) await clickButtonText(page, 'No thanks');
+      for (const [name, width, height, theme] of [
+        ['h4a-dark', 1440, 900, 'dark'],
+        ['h4b-light', 1440, 900, 'light'],
+        ['h4c-narrow', 900, 1120, 'dark'],
+      ] as const) {
+        await frame(width, height, theme);
+        await sleep(800);
+        await screenshot(page, screenshotDir, `${name}.png`);
+      }
+      await frame(1440, 900, 'dark');
+      await sleep(500);
+    }
+
+    // 5. Push from Home: pushed to the bare remote, then its PR is checked: View PR.
+    await page.eval(
+      `${homeRow(ws.push?.id as string)}.querySelector('[data-home-action=push]').click()`,
+    );
+    await page.waitFor(
+      `/PR #212 open/.test(${homeRow(ws.push?.id as string)}?.innerText ?? '')`,
+      'PR #212 open',
+      30_000,
+    );
+    assert.equal(
+      fx.git(origin, 'rev-parse', ws.push?.branch as string).trim(),
+      fx.git(ws.push?.tree as string, 'rev-parse', 'HEAD').trim(),
+      'pushed to the remote',
+    );
+    await page.eval(
+      `${homeRow(ws.push?.id as string)}.querySelector('[data-home-action=pr]').click()`,
+    );
+    await sleep(300);
+    assert.deepEqual(await mainProcess.eval('globalThis.__opened'), [
+      'https://git.example.com/acme/web/pull/212',
+    ]);
+    // The merged ones: pushed from Home too, then Clean up.
+    for (const key of ['merged1', 'merged2']) {
+      await page.eval(
+        `${homeRow(ws[key]?.id as string)}.querySelector('[data-home-action=push]').click()`,
+      );
+      await page.waitFor(
+        `${homeRow(ws[key]?.id as string)}?.dataset.homeSection === 'clean'`,
+        `${key} under Clean up`,
+        30_000,
+      );
+    }
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-home-list=clean]').innerText`),
+      /Clean up\s*2[\s\S]*Delete 2 merged workspaces[\s\S]*PR #198 merged[\s\S]*PR #187 merged|Clean up\s*2[\s\S]*Delete 2 merged workspaces[\s\S]*PR #187 merged[\s\S]*PR #198 merged/,
+    );
+
+    // 6. Keyboard: ↑↓ across sections, Tab to a row's actions, hover actions on focus.
+    await page.eval(`document.querySelector('[data-home-overview]').focus()`);
+    await pressKey(page, 'ArrowDown');
+    await page.waitFor(`${activeRow} === ${JSON.stringify(ws.perm?.id)}`, 'the first row');
+    await pressKey(page, 'ArrowUp');
+    assert.equal(await page.eval(activeRow), ws.perm?.id, 'stays on the first row');
+    for (let i = 0; i < 3; i++) await pressKey(page, 'ArrowDown');
+    // The first of Working now: its Open shows only while it has focus or the mouse.
+    const working = await page.eval<string>(activeRow);
+    assert.equal(await page.eval(`${homeRow(working)}.dataset.homeSection`), 'working');
+    const openShown = (id: string) =>
+      `!!${homeRow(id)}.querySelector('[data-home-action=open]')?.offsetParent`;
+    assert.equal(await page.eval(openShown(working)), true, 'Open shows on focus');
+    await pressKey(page, 'Tab');
+    assert.equal(
+      await page.eval(
+        `document.activeElement.dataset.homeAction + ':' + document.activeElement.closest('[data-home-row]').dataset.homeRow`,
+      ),
+      `open:${working}`,
+      'Tab reaches its Open',
+    );
+    await pressKey(page, 'Tab');
+    assert.equal(await page.eval(activeRow), (await page.eval<string[]>(sectionIds('working')))[1]);
+    assert.equal(await page.eval(openShown(working)), false, 'Open hides again');
+    await screenshot(page, screenshotDir, 'h5-focus.png');
+    // ↵ on a row opens its workspace: the second of Needs you.
+    await page.eval(`${homeRow(ws.input?.id as string)}.focus()`);
+    await pressKey(page, 'Enter');
+    await page.waitFor(`!document.querySelector('[data-home-overview]')`, 'the workspace');
+    assert.match(
+      await page.eval<string>(
+        `document.querySelector('[aria-label=Terminals] [role=tab][aria-selected=true]').innerText`,
+      ),
+      /Claude/,
+    );
+
+    // 7. The rows' actions. Open: the Claude tab of a workspace that needs permission.
+    const home = async () => {
+      await pressKey(page, 'Digit0', CMD);
+      await page.waitFor(`!!document.querySelector('[data-home-overview=sections]')`, 'Home');
+    };
+    await home();
+    await page.eval(
+      `${homeRow(ws.perm?.id as string)}.querySelector('[data-home-action=open]').click()`,
+    );
+    await page.waitFor(
+      `!document.querySelector('[data-home-overview]') && /Claude/.test(document.querySelector('[aria-label=Terminals] [role=tab][aria-selected=true]')?.innerText ?? '')`,
+      'the Claude tab',
+    );
+    // Review at a gate opens the spec view; its answer types into Claude.
+    await home();
+    await page.eval(
+      `${homeRow(ws.gate?.id as string)}.querySelector('[data-home-action=review]').click()`,
+    );
+    await page.waitFor(
+      `document.querySelector('[data-spec-tab]')?.getAttribute('aria-selected') === 'true'`,
+      'the spec view',
+    );
+    await home();
+    await page.waitFor(
+      `!${homeRow(ws.gate?.id as string)}.querySelector('[data-answer]')?.disabled`,
+      'Approve spec enabled',
+    );
+    await page.eval(`${homeRow(ws.gate?.id as string)}.querySelector('[data-answer]').click()`);
+    // Typed as a paste, as the header's answer button does.
+    assert.match(await waitForFile(path.join(fx.root, `input-${ws.gate?.id}.txt`)), /approved/);
+    // Commit…: the workspace with the Changes panel and its commit box in focus.
+    await home();
+    await page.eval(
+      `${homeRow(ws.commit?.id as string)}.querySelector('[data-home-action=commit]').click()`,
+    );
+    await page.waitFor(
+      `document.activeElement?.getAttribute('aria-label') === 'Commit message'`,
+      'the commit box in focus',
+    );
+    assert.equal(await page.eval(`!!document.querySelector('[data-finish]')`), true);
+    // At a glance: a project opens its view.
+    await home();
+    await page.eval(`document.querySelector('[data-home-project=api]').click()`);
+    await page.waitFor(`document.querySelector('h1')?.textContent === 'api'`, 'the api project');
+
+    // 8. Delete on a merged row: the Delete workspace dialog, as from the sidebar.
+    await home();
+    await page.eval(`${homeRow(ws.merged1?.id as string)}.focus()`);
+    await page.eval(
+      `${homeRow(ws.merged1?.id as string)}.querySelector('[data-home-action=delete]').click()`,
+    );
+    await page.waitFor(`${dialogText}.includes('Delete ABC-198 Merged 198?')`, 'Delete workspace');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+    // Delete 2 merged workspaces: one dialog with both and their checks, one button.
+    await clickButtonText(page, 'Delete 2 merged workspaces');
+    await page.waitFor(
+      `document.querySelectorAll('dialog[open] [data-delete-workspace]').length === 2 && ${dialogText}.includes('No uncommitted changes or unpushed commits')`,
+      'the merged workspaces with their checks',
+    );
+    assert.match(await page.eval<string>(dialogText), /Delete 2 merged workspaces\?/);
+    assert.equal(await page.eval<string>('document.activeElement.textContent'), 'Cancel Esc');
+    await screenshot(page, screenshotDir, 'h6-delete-merged.png');
+    assert.equal(
+      await page.eval(`document.querySelector('dialog[open] button[type=submit]').textContent`),
+      'Delete 2 workspaces',
+    );
+    await submitDialog(page);
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the deletes', 30_000);
+    await page.waitFor(`!document.querySelector('[data-home-list=clean]')`, 'Clean up empty');
+    for (const key of ['merged1', 'merged2']) {
+      assert.equal(fs.existsSync(ws[key]?.tree as string), false, `${key}'s worktree is gone`);
+    }
+    await screenshot(page, screenshotDir, 'h7-after-delete.png');
+
+    console.log(`e2e home test passed (${devMode ? 'dev server' : 'production build'})`);
+  } catch (error) {
+    if (app) {
+      const text = await app.page
+        .eval<string>(`document.querySelector('#root')?.innerText.slice(0, 2500) ?? ''`)
+        .catch(() => '');
+      console.error(`window text:\n${text}`);
+      if (app.page.errors.length > 0)
+        console.error(`renderer errors:\n  ${app.page.errors.join('\n  ')}`);
+    }
+    throw error;
+  } finally {
+    await (app as RunningApp | undefined)?.stop();
+    fx.cleanup();
+  }
+}
+
+main().catch((error) => {
+  console.error(`e2e home test failed: ${error instanceof Error ? error.stack : error}`);
+  process.exit(1);
+});

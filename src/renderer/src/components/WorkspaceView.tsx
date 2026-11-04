@@ -24,6 +24,7 @@ import type { ConversationAids, NavigatorState } from '../terminal/conversation'
 import { trpcClient, useTRPC } from '../trpc';
 import { button, iconButton, isMac, Kbd, keyHint } from '../ui/controls';
 import { ChangesIcon, EditorIcon, ResponsesIcon, TrashIcon } from '../ui/icons';
+import { takeRequest } from '../ui/open-requests';
 import { ChangesPanel, PrBadge } from './ChangesPanel';
 import { UnlinkDialog } from './DeleteWorkspaceDialog';
 import { OpenAllDialog, showAppNotice, useOpenInEditor } from './EditorPicker';
@@ -173,7 +174,8 @@ export function WorkspaceView({
 }) {
   const trpc = useTRPC();
   // The spec view's tab (spec §13.8) replaces the terminal while shown.
-  const [docShown, setDocShown] = useState(false);
+  // Review at a gate on Home opens it straight away (spec §6.7).
+  const [docShown, setDocShown] = useState(() => takeRequest(workspace.id, 'spec'));
   // The Responses panel (spec §6.8) and the Claude terminal it scrolls.
   const [responsesOpen, setResponsesOpen] = useState(false);
   const [responsesFull, setResponsesFull] = useState(false);

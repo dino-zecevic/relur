@@ -521,6 +521,16 @@ export async function typeInTerminal(page: Cdp, text: string, enter = true): Pro
   if (enter) await pressEnter(page);
 }
 
+/** Home's Terminal tab (spec §6.7), with its shell connected. */
+export async function showHomeTerminal(page: Cdp): Promise<void> {
+  await page.waitFor(`!!document.querySelector('[data-home-tab=terminal]')`, 'Home');
+  await page.eval(`document.querySelector('[data-home-tab=terminal]').click()`);
+  await page.waitFor(
+    `[...document.querySelectorAll('[data-terminal][data-connected]')].some((t) => t.offsetParent)`,
+    'the home terminal',
+  );
+}
+
 /** Replaces the text of an input field and presses Enter. */
 export async function typeInField(page: Cdp, selector: string, text: string, enter = true) {
   await page.eval(

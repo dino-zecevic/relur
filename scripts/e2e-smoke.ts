@@ -42,6 +42,7 @@ import {
   type RunningApp,
   reloadPage,
   screenshot,
+  showHomeTerminal,
   sleep,
   submitDialog,
   typeInField,
@@ -376,6 +377,7 @@ exec sleep 600
       mainProcess.eval(`globalThis.__folderPanel.answer = ${JSON.stringify(folder)}`);
 
     // On launch the first profile is selected and its home shell runs in ~ (spec §6.7).
+    await showHomeTerminal(page);
     await typeInTerminal(
       page,
       `printf '%s|%s|%s' "$${profileVar}" "$PWD" "\${CLAUDE_CONFIG_DIR-unset}" > "$HOME/work-home.txt"`,
@@ -1433,6 +1435,7 @@ exec sleep 600
       `document.querySelector('[role=tab][aria-current=true]')?.getAttribute('aria-label') === 'Select Personal'`,
       'Personal selected',
     );
+    await showHomeTerminal(page);
     await typeInTerminal(
       page,
       `printf '%s|%s' "$${profileVar}" "$CLAUDE_CONFIG_DIR" > "$HOME/personal-home.txt"`,
@@ -1446,14 +1449,14 @@ exec sleep 600
     // Start Claude here types into the home shell only while the shell is at its prompt.
     await typeInTerminal(page, 'sleep 60');
     await sleep(500);
-    await clickButtonText(page, 'Start Claude here');
+    await pressShortcut(page, 'startClaude');
     await page.waitFor(
       `document.body.innerText.includes('The home terminal is busy')`,
       'the refusal',
     );
     await pressCtrlC(page);
     await sleep(500);
-    await clickButtonText(page, 'Start Claude here');
+    await pressShortcut(page, 'startClaude');
     assert.equal(await claudeRun(3), `${fx.root}\npersonal`);
     await pressCtrlC(page);
     await sleep(500);

@@ -63,6 +63,7 @@ export const SECTIONS: { title: string; pages: string[] }[] = [
     title: 'Workspaces',
     pages: [
       'new-workspace',
+      'home',
       'sidebar',
       'workspace-view',
       'tasks-across-repositories',

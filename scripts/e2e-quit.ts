@@ -169,6 +169,17 @@ exec sleep 600
           ...p,
           claude: { command: fakeClaude, args: [] },
         })),
+        // A project whose expanding in the sidebar the window remembers.
+        projects: [
+          {
+            id: 'notes',
+            profileId: 'work',
+            name: 'notes',
+            repoPath: fx.localRepo('notes'),
+            remote: null,
+            baseBranch: 'main',
+          },
+        ],
       }),
     );
     const launch = async () => {
@@ -203,7 +214,7 @@ exec sleep 600
       // ⌘Q while Claude runs asks once, in the window; Quit quits completely.
       await activate(running.main);
       page = await running.reconnect();
-      await clickButtonText(page, 'Start Claude here');
+      await pressShortcut(page, 'startClaude');
       await waitForFile(path.join(fx.root, 'claude-started.txt'));
       await sleep(500);
       let processes = descendants(running.pid);
@@ -248,8 +259,8 @@ exec sleep 600
       app = undefined;
       // The end of a desktop session (spec §5): every process of the app is
       // signalled at once, or its display goes away. What the window
-      // remembers (here the Home panel, collapsed) was on disk already.
-      const remembered = `localStorage.getItem('quick-actions-collapsed')`;
+      // remembers (here a project expanded in the sidebar) was on disk already.
+      const remembered = `localStorage.getItem('sidebar-projects')`;
       for (const end of ['every process signalled', 'the display gone'] as const) {
         let display: ChildProcess | null = null;
         let env = withDisplayEnv(fx.env);
@@ -264,7 +275,13 @@ exec sleep 600
         const running = await launchApp({ env, dev: devMode, electronArgs });
         app = running;
         const before = await running.page.eval<string | null>(remembered);
-        await pressShortcut(running.page, 'homePanel');
+        await running.page.waitFor(
+          `!!document.querySelector('[data-nav-key="p:notes"] button[aria-label="Expand"]')`,
+          'the project',
+        );
+        await running.page.eval(
+          `document.querySelector('[data-nav-key="p:notes"] button[aria-label="Expand"]').click()`,
+        );
         await running.page.waitFor(`${remembered} !== ${JSON.stringify(before)}`, 'the change');
         const changed = await running.page.eval<string | null>(remembered);
         // A moment later, as no one logs out within a fraction of a second.

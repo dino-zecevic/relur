@@ -1,6 +1,6 @@
 # Start Claude here
 
-**Start Claude here** <kbd>{{key:startClaude}}</kbd> in a project view runs Claude in the main checkout, not in a workspace. **Open shell** <kbd>{{key:newShell}}</kbd> does the same for a terminal. On Home, **Start Claude here** types `claude` into the Home terminal and presses <kbd>↵</kbd>, as you would; if another program is running there, it does nothing and says **The home terminal is busy**.
+**Start Claude here** <kbd>{{key:startClaude}}</kbd> in a project view runs Claude in the main checkout, not in a workspace. **Open shell** <kbd>{{key:newShell}}</kbd> does the same for a terminal. On [Home](home), **Start Claude here** switches to the Terminal tab, types `claude` into the Home terminal and presses <kbd>↵</kbd>, as you would; if another program is running there, it does nothing and says **The home terminal is busy**.
 
 It's good for questions about the code, not for changes.
 

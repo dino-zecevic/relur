@@ -1,0 +1,26 @@
+# Home
+
+Each profile has a Home <kbd>{{key:home}}</kbd>: the first thing you see, and where you go back to between tasks. It has two tabs, like a workspace: **Overview** and **Terminal**. {{mac}}<kbd>⌃1</kbd> and <kbd>⌃2</kbd> switch between them, as do <kbd>{{keys:cycleTabs}}</kbd>.{{/mac}}{{other}}<kbd>{{keys:cycleTabs}}</kbd> switches between them.{{/other}}
+
+## Overview
+
+The Overview shows the profile's workspaces in four sections, and only those that need something from you. It changes as Claude works.
+
+- **Needs you:** workspaces that need permission (**Open** takes you to the Claude tab), are waiting for input (**Open**), or wait at a [workflow gate](workflows#when-the-skills-wait-for-you), with **Review**, which opens the spec, and the gate's answer button, such as **Approve spec**. Workspaces Claude didn't [finish](resume#the-unfinished-marker) are here too, with **Continue** and **Dismiss**. The oldest is first, in the order <kbd>{{key:nextNeedingYou}}</kbd> jumps through them.
+- **Working now:** where Claude is working, for how long, how many of its agents run in the background, and how much [memory](memory) its sessions use.
+- **Ready to ship:** Done workspaces with something left to [finish](finishing-work). **Commit…** opens the workspace with the Changes panel and its commit message in focus; **Push** pushes the branch (in a workspace with [linked repositories](tasks-across-repositories) it opens the Changes panel, where you push each one); **View PR** opens the pull request in your browser.
+- **Clean up:** workspaces whose pull request is merged. **Delete** on a row opens [Delete workspace](delete-workspace); **Delete n merged workspaces** opens one dialog with all of them, each with what deleting it would lose, and deletes them together.
+
+A workspace shows in one section only. Each section shows five rows at most; **Show all** shows the rest.
+
+Next to the sections, **At a glance** lists the profile's projects with how many workspaces each has (and how many other projects' workspaces it is linked into); click one to open it. **Quick actions** has **New workspace**, **Add project** and the Guide. In a narrow window both move below the sections.
+
+When nothing needs you, nothing runs and nothing is waiting to ship, the Overview says **All clear** and shows the quick actions. A profile without projects offers **Add your first project**.
+
+### Keyboard
+
+Click a row, or press <kbd>↵</kbd> on it, to open its workspace. <kbd>↑</kbd> and <kbd>↓</kbd> move between the rows of all sections, and <kbd>Tab</kbd> reaches a row's buttons. Buttons that show only when the mouse is over a row, such as **Open** under Working now and **Delete** under Clean up, show while the row has the focus too.
+
+## Terminal
+
+The Terminal tab is the profile's Home terminal: a shell in your home folder that uses the profile's account, for anything that isn't a task. **Start Claude here** <kbd>{{key:startClaude}}</kbd> on Home switches to it and types `claude` there; see [Start Claude here](start-claude-here). If the shell exits, **Start again** starts a new one.

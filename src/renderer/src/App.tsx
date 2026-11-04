@@ -12,11 +12,11 @@ import { AddProjectDialog } from './components/AddProjectDialog';
 import { AdoptWorktreeDialog } from './components/AdoptWorktreeDialog';
 import { CloseNotice } from './components/CloseNotice';
 import { ConfigError } from './components/ConfigError';
-import { DeleteWorkspaceDialog } from './components/DeleteWorkspaceDialog';
+import { DeleteWorkspaceDialog, DeleteWorkspacesDialog } from './components/DeleteWorkspaceDialog';
 import { APP_NOTICE_EVENT } from './components/EditorPicker';
 import { EditProfileDialog } from './components/EditProfileDialog';
 import { FirstLaunch } from './components/FirstLaunch';
-import { HomeView } from './components/HomeView';
+import { type HomeTab, HomeView } from './components/HomeView';
 import { InstallCliDialog } from './components/InstallCliDialog';
 import { Modal, ModalFooter } from './components/Modal';
 import { NewProfileWizard } from './components/NewProfileWizard';
@@ -38,8 +38,8 @@ import { GuideContext } from './guide/link';
 import { trpcClient, useTRPC } from './trpc';
 import { button, iconButton, isMac, Kbd } from './ui/controls';
 import { LaunchingContext } from './ui/launching';
+import { requestOnOpen } from './ui/open-requests';
 import { useProjectDisclosure } from './ui/project-disclosure';
-import { remember } from './ui/remember';
 import { playAlert } from './ui/sounds';
 import { useNativeTheme } from './ui/theme';
 import {
@@ -52,17 +52,6 @@ import {
   viewOf,
   WORKSPACES_TAB,
 } from './view';
-
-const COLLAPSED_KEY = 'quick-actions-collapsed';
-
-/** Profile ids whose home overlay is collapsed; a per-viewer convenience. */
-function loadCollapsed(): Record<string, boolean> {
-  try {
-    return JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '{}');
-  } catch {
-    return {};
-  }
-}
 
 export function App() {
   const trpc = useTRPC();
@@ -99,7 +88,8 @@ export function App() {
   const [views, setViews] = useState<Record<string, View>>({});
   const [selectedTab, setSelectedTab] = useState<Record<string, string>>({});
   const disclosure = useProjectDisclosure();
-  const [overlayCollapsed, setOverlayCollapsed] = useState(loadCollapsed);
+  // Home's tab per profile (spec §6.7): the Overview until the Terminal is chosen.
+  const [homeTabs, setHomeTabs] = useState<Record<string, HomeTab>>({});
   const [addingProject, setAddingProject] = useState(false);
   const [removing, setRemoving] = useState<Project | null>(null);
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
@@ -321,6 +311,8 @@ export function App() {
           ? { kind: 'project', projectId: project.id }
           : chosen;
 
+  const homeTab: HomeTab = (profileId && homeTabs[profileId]) || 'overview';
+
   const showView = (id: string, next: View, tab?: string) => {
     selectProfile(id);
     const shown = views[id];
@@ -364,6 +356,8 @@ export function App() {
   };
   const [newWorkspace, setNewWorkspace] = useState<{ project: Project | null } | null>(null);
   const [deleting, setDeleting] = useState<Workspace | null>(null);
+  // Home's Delete n merged workspaces (spec §6.7): one dialog for all of them.
+  const [deletingMerged, setDeletingMerged] = useState<Workspace[] | null>(null);
   // Why Claude didn't start in a new workspace, by workspace id.
   const [claudeNotices, setClaudeNotices] = useState<Record<string, string>>({});
   // `then` is what was asked for; it opens once the check passes (spec §6.11).
@@ -391,9 +385,13 @@ export function App() {
       onError: (error) => setHomeNotice(error.message),
     }),
   );
+  const showHomeTab = (id: string, tab: HomeTab) => setHomeTabs((t) => ({ ...t, [id]: tab }));
+  // Start Claude here on Home types into the home shell, on the Terminal tab (spec §6.7).
   const startClaudeIn = (v: View) => {
-    if (v.kind === 'home' && profileId) homeClaude.mutate({ profileId });
-    else if (v.kind === 'project') projectClaude.mutate({ projectId: v.projectId });
+    if (v.kind === 'home' && profileId) {
+      showHomeTab(profileId, 'terminal');
+      homeClaude.mutate({ profileId });
+    } else if (v.kind === 'project') projectClaude.mutate({ projectId: v.projectId });
   };
   // When the check passes, the gate lifts in place and the requested view opens (spec §6.11).
   const afterSetup = setupOk && profileId && view.kind === 'setup' ? view.then : undefined;
@@ -413,15 +411,6 @@ export function App() {
     const timer = setTimeout(() => setHomeNotice(null), 5000);
     return () => clearTimeout(timer);
   }, [homeNotice]);
-
-  const toggleOverlay = () => {
-    if (!profileId) return;
-    setOverlayCollapsed((current) => {
-      const next = { ...current, [profileId]: !current[profileId] };
-      remember(COLLAPSED_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
 
   // Workspaces whose Claude is launching show the spinner (spec §6.3).
   const launching = new Set(
@@ -538,10 +527,6 @@ export function App() {
     }
     // In the Guide, the keys below belong to the profile's views.
     if (guideOpen) return false;
-    if (is('homePanel') !== -1) {
-      if (view.kind === 'home') toggleOverlay();
-      return view.kind === 'home';
-    }
     if (is('startClaude') !== -1) {
       if (view.kind === 'workspace' || view.kind === 'setup') return false;
       if (!setupOk) openSetup({ open: 'startClaude', from: view });
@@ -605,6 +590,19 @@ export function App() {
       if (next) openWorkspace(next);
       return true;
     }
+    // Home's two tabs (spec §6.7): ⌃1 Overview, ⌃2 Terminal, ⌃Tab between them.
+    if (view.kind === 'home') {
+      const digit = is('terminalTab');
+      if (digit === 1 || digit === 2) {
+        showHomeTab(profile.id, digit === 1 ? 'overview' : 'terminal');
+        return true;
+      }
+      if (is('cycleTabs') !== -1) {
+        showHomeTab(profile.id, homeTab === 'overview' ? 'terminal' : 'overview');
+        return true;
+      }
+      return digit !== -1;
+    }
     // Cycle the view's terminal tabs.
     const cycle = is('cycleTabs');
     if (cycle !== -1 && viewSessions.length > 1) {
@@ -639,7 +637,9 @@ export function App() {
     : project
       ? project.repoPath
       : profile
-        ? `~${profile.env.CLAUDE_CONFIG_DIR ? ` · ${profile.env.CLAUDE_CONFIG_DIR}` : ''}`
+        ? homeTab === 'terminal'
+          ? 'Home › Terminal'
+          : 'Home'
         : '';
 
   // Opens the Guide: at a page and section for a deep link (remembering where
@@ -854,23 +854,36 @@ export function App() {
                     <HomeView
                       key={tabKey}
                       profile={profile}
+                      tab={homeTab}
+                      onSelectTab={(tab) => showHomeTab(profile.id, tab)}
                       session={viewSessions[0] ?? null}
+                      sessions={profileSessions}
                       projects={profileProjects}
                       workspaces={profileWorkspaces}
-                      collapsed={overlayCollapsed[profile.id] ?? false}
-                      onToggleCollapsed={toggleOverlay}
-                      onAddProject={() => setAddingProject(true)}
-                      onNewWorkspace={
-                        profileProjects.length > 0 ? () => startNewWorkspace(null) : null
-                      }
-                      onOpenWorkspace={openWorkspace}
-                      startClaude={{
-                        run: () =>
-                          setupOk
-                            ? homeClaude.mutate({ profileId: profile.id })
-                            : openSetup({ open: 'startClaude', from: view }),
-                        error: homeNotice,
-                        pending: homeClaude.isPending,
+                      memory={memory.data ?? null}
+                      startClaude={{ error: homeNotice }}
+                      actions={{
+                        open: (w) => openRequest.current(w.id),
+                        openProject,
+                        review: (w) => {
+                          requestOnOpen(w.id, 'spec');
+                          openWorkspace(w);
+                        },
+                        commit: (w) => {
+                          requestOnOpen(w.id, 'commit');
+                          toggleChanges(w.id, true);
+                          openWorkspace(w);
+                        },
+                        openChanges: (w) => {
+                          toggleChanges(w.id, true);
+                          openWorkspace(w);
+                        },
+                        delete: setDeleting,
+                        deleteMerged: setDeletingMerged,
+                        newWorkspace:
+                          profileProjects.length > 0 ? () => startNewWorkspace(null) : null,
+                        addProject: () => setAddingProject(true),
+                        guide: () => openGuide(null),
                       }}
                     />
                   ) : currentConfig ? (
@@ -1052,6 +1065,21 @@ export function App() {
                 if (teardown && !teardown.ok) {
                   setAppNotice({
                     text: `${deleting.name} was deleted, but its teardown didn't finish: ${teardown.message}.${teardown.output ? `\n${teardown.output}` : ''}`,
+                  });
+                }
+              }}
+            />
+          ) : null}
+          {deletingMerged ? (
+            <DeleteWorkspacesDialog
+              workspaces={deletingMerged}
+              projects={currentConfig?.projects ?? []}
+              onClose={() => setDeletingMerged(null)}
+              onDeleted={({ teardownFailures }) => {
+                setDeletingMerged(null);
+                if (teardownFailures.length > 0) {
+                  setAppNotice({
+                    text: `Deleted, but teardown didn't finish for ${teardownFailures.join('; ')}.`,
                   });
                 }
               }}

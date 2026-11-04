@@ -1,9 +1,9 @@
 import type { Project } from '@shared/schemas';
 import type { RepoDeleteCheck, Workspace } from '@shared/workspaces';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { GuideLink } from '../guide/link';
-import { useTRPC } from '../trpc';
+import { trpcClient, useTRPC } from '../trpc';
 import { button, Kbd } from '../ui/controls';
 import { Modal, ModalFooter } from './Modal';
 
@@ -444,6 +444,176 @@ export function DeleteWorkspaceDialog({
             disabled={!data || remove.isPending}
           >
             {remove.isPending ? 'Deleting…' : danger ? 'Delete anyway' : 'Delete'}
+          </button>
+        </ModalFooter>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Delete n merged workspaces, from Home's Clean up (spec §6.7, §14.2): every
+ * workspace with Delete workspace's checks, one card per repository with its
+ * warnings and its own "Also delete the local branch", Cancel focused first.
+ * They are deleted one after another; one that git refuses stops the rest,
+ * and Delete anyway then forces it.
+ */
+export function DeleteWorkspacesDialog({
+  workspaces,
+  projects,
+  onClose,
+  onDeleted,
+}: {
+  workspaces: Workspace[];
+  /** The profile's projects, for repository names and remotes. */
+  projects: Project[];
+  onClose: () => void;
+  /** Teardowns that didn't finish don't stop the deletes; they are shown afterwards (spec §8.3). */
+  onDeleted: (result: { teardownFailures: string[] }) => void;
+}) {
+  const trpc = useTRPC();
+  const checks = useQueries({
+    queries: workspaces.map((w) =>
+      trpc.workspaces.deleteCheck.queryOptions({ workspaceId: w.id }, { staleTime: 0 }),
+    ),
+  });
+  const [deleted, setDeleted] = useState<string[]>([]);
+  const [refused, setRefused] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  // "Also delete the local branch", by workspace and repository.
+  const [alsoDeleteBranch, setAlsoDeleteBranch] = useState<Record<string, boolean>>({});
+  const name = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
+  const remote = (id: string) => projects.find((p) => p.id === id)?.remote ?? null;
+  const left = workspaces.filter((w) => !deleted.includes(w.id));
+  const loaded = checks.every((c) => c.data);
+  const checkError = checks.find((c) => c.error)?.error?.message ?? null;
+
+  const run = async () => {
+    setPending(true);
+    setError(null);
+    const failures: string[] = [];
+    for (const [i, w] of workspaces.entries()) {
+      const check = checks[i]?.data;
+      if (deleted.includes(w.id) || !check) continue;
+      const force = refused === w.id;
+      const choice = (r: RepoDeleteCheck) =>
+        repoChoice(r, alsoDeleteBranch[`${w.id}:${r.projectId}`] ?? false, force);
+      const main = check.repos.find((r) => r.primary);
+      try {
+        const result = await trpcClient.workspaces.delete.mutate(
+          w.repos.length > 1
+            ? { workspaceId: w.id, force, deleteBranch: false, repos: check.repos.map(choice) }
+            : {
+                workspaceId: w.id,
+                force: (main?.uncommitted.length ?? 0) > 0 || force,
+                deleteBranch: main ? choice(main).deleteBranch : true,
+              },
+        );
+        if (result.teardown && !result.teardown.ok) {
+          failures.push(`${w.name} (${result.teardown.message})`);
+        }
+        setDeleted((d) => [...d, w.id]);
+      } catch (e) {
+        setRefused(w.id);
+        setError(`${w.name}: ${e instanceof Error ? e.message : String(e)}`);
+        setPending(false);
+        return;
+      }
+    }
+    setPending(false);
+    onDeleted({ teardownFailures: failures });
+  };
+
+  return (
+    <Modal
+      title={`Delete ${plural(workspaces.length, 'merged workspace')}?`}
+      description="Removes their worktrees and ends their terminals. Branches on the remotes are kept; a local branch with commits that aren't pushed is kept unless you tick its box."
+      onClose={onClose}
+    >
+      <form
+        className="text-md"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run();
+        }}
+      >
+        {!loaded && !checkError ? (
+          <p className="text-sm text-fg-subtle">Checking the worktrees…</p>
+        ) : null}
+        <ul data-delete-merged className="flex max-h-[420px] flex-col gap-2.5 overflow-y-auto">
+          {workspaces.map((w, i) => {
+            const check = checks[i]?.data;
+            if (deleted.includes(w.id)) return null;
+            return (
+              <li key={w.id} data-delete-workspace={w.id} className="space-y-1.5">
+                <div className="flex items-baseline gap-2">
+                  {w.task.id ? (
+                    <span className="font-mono text-sm text-fg-subtle">{w.task.id}</span>
+                  ) : null}
+                  <span className="min-w-0 truncate font-medium">{w.task.title || w.name}</span>
+                  <span className="shrink-0 font-mono text-xs text-fg-subtle">
+                    {name(w.projectId)}
+                  </span>
+                </div>
+                {check && check.running > 0 ? (
+                  <div className="rounded-lg border border-st-permission/50 bg-st-permission/8">
+                    <Warning
+                      title={`${plural(check.running, 'running session')} will be stopped`}
+                    />
+                  </div>
+                ) : null}
+                {(check?.repos ?? []).map((r) => {
+                  const key = `${w.id}:${r.projectId}`;
+                  return (
+                    <RepoCard
+                      key={r.projectId}
+                      name={name(r.projectId)}
+                      check={r}
+                      branch={w.branch}
+                      remote={remote(r.projectId)}
+                      alsoDeleteBranch={alsoDeleteBranch[key] ?? false}
+                      onAlsoDeleteBranch={(value) =>
+                        setAlsoDeleteBranch((all) => ({ ...all, [key]: value }))
+                      }
+                    />
+                  );
+                })}
+                {check?.worktreeMissing ? (
+                  <p className="text-sm text-fg-muted">The worktree folder is already gone.</p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+        <p className="mt-3 flex items-center gap-1.5 text-sm text-fg-subtle">
+          <GuideLink to="delete-workspace" label="Deleting a workspace" before={onClose} />
+          What is kept and what goes
+        </p>
+        {(error ?? checkError) ? (
+          <p role="alert" className="mt-3 text-sm text-st-error select-text">
+            ✕ {error ?? checkError}
+          </p>
+        ) : null}
+        <ModalFooter>
+          <button
+            type="button"
+            data-autofocus
+            className={button('secondary', 'lg')}
+            onClick={deleted.length > 0 ? () => onDeleted({ teardownFailures: [] }) : onClose}
+          >
+            Cancel <Kbd>Esc</Kbd>
+          </button>
+          <button
+            type="submit"
+            className={button('danger', 'lg')}
+            disabled={!loaded || pending || left.length === 0}
+          >
+            {pending
+              ? 'Deleting…'
+              : refused
+                ? 'Delete anyway'
+                : `Delete ${plural(left.length, 'workspace')}`}
           </button>
         </ModalFooter>
       </form>

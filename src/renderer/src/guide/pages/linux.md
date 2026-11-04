@@ -52,7 +52,7 @@ Without the listing, the AppImage's launcher starts {{app}} with `--no-sandbox`.
 
 ## Keys that do nothing
 
-Input methods can take some keys before {{app}} sees them. IBus, the default on GNOME, opens its emoji picker with Super+., Ctrl+. or Ctrl+Shift+E, depending on its version and settings, and Ctrl+Shift+U types Unicode characters, so {{app}} doesn't use that one. If **Open in editor** or **Hide or show Quick actions** don't respond to their keys, use their buttons, or turn the input method's shortcut off: run `ibus-setup` and clear it on the **Emoji** tab (on GNOME 46 and later, Settings › Keyboard › Keyboard Shortcuts may list it instead).
+Input methods can take some keys before {{app}} sees them. IBus, the default on GNOME, opens its emoji picker with Super+., Ctrl+. or Ctrl+Shift+E, depending on its version and settings, and Ctrl+Shift+U types Unicode characters, so {{app}} doesn't use that one. If **Open in editor** doesn't respond to its key, use its button, or turn the input method's shortcut off: run `ibus-setup` and clear it on the **Emoji** tab (on GNOME 46 and later, Settings › Keyboard › Keyboard Shortcuts may list it instead).
 
 ## Wayland and X11
 

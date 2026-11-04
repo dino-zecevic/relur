@@ -201,11 +201,11 @@ export function WorkflowActions({
 }) {
   const trpc = useTRPC();
   const send = useMutation(trpc.workflow.continue.mutationOptions());
-  const answer = useMutation(trpc.workflow.answer.mutationOptions());
+  const [answerError, setAnswerError] = useState<string | null>(null);
   if (!workflow.status) return null;
   const status = workflow.statuses[workflow.index];
   const idle = claudeRunning && (canContinue(state) || state === 'awaiting-approval');
-  const error = (send.error ?? answer.error)?.message;
+  const error = send.error?.message ?? answerError;
   return (
     <span className="inline-flex min-w-0 shrink items-center gap-2">
       {status?.hint ? (
@@ -228,24 +228,14 @@ export function WorkflowActions({
           Review
         </button>
       ) : null}
-      {workflow.kind === 'gate' && status?.answer ? (
-        <button
-          type="button"
-          data-answer
-          className={button(state === 'awaiting-approval' ? 'primary' : 'secondary', 'sm')}
-          disabled={!idle || answer.isPending}
-          title={
-            idle
-              ? `Types into Claude: ${status.answer.prompt}`
-              : claudeRunning
-                ? 'Claude is busy; answer when it stops'
-                : "Claude isn't running; start it first"
-          }
-          onClick={() => answer.mutate({ workspaceId })}
-        >
-          {status.answer.label}
-        </button>
-      ) : null}
+      <GateAnswer
+        workspaceId={workspaceId}
+        workflow={workflow}
+        state={state}
+        claudeRunning={claudeRunning}
+        className={(primary) => button(primary ? 'primary' : 'secondary', 'sm')}
+        onError={setAnswerError}
+      />
       {workflow.kind === 'step' && idle ? (
         <button
           type="button"
@@ -260,6 +250,59 @@ export function WorkflowActions({
       ) : null}
       {error ? <span className="shrink-0 text-sm text-st-error">✕ {error}</span> : null}
     </span>
+  );
+}
+
+/**
+ * A gate's answer button (spec §13.5), in the header and on Home (§6.7): it
+ * types the answer's prompt into Claude while Claude runs and is idle.
+ */
+export function GateAnswer({
+  workspaceId,
+  workflow,
+  state,
+  claudeRunning,
+  className,
+  onError,
+}: {
+  workspaceId: string;
+  workflow: WorkflowInfo;
+  state: WorkspaceState;
+  claudeRunning: boolean;
+  /** The button's classes; primary while it is what the workspace waits for. */
+  className: (primary: boolean) => string;
+  onError: (message: string | null) => void;
+}) {
+  const trpc = useTRPC();
+  const answer = useMutation(
+    trpc.workflow.answer.mutationOptions({
+      onMutate: () => onError(null),
+      onError: (e) => onError(e.message),
+    }),
+  );
+  const status = workflow.statuses[workflow.index];
+  if (workflow.kind !== 'gate' || !status?.answer) return null;
+  const idle = claudeRunning && (canContinue(state) || state === 'awaiting-approval');
+  return (
+    <button
+      type="button"
+      data-answer
+      className={className(state === 'awaiting-approval')}
+      disabled={!idle || answer.isPending}
+      title={
+        idle
+          ? `Types into Claude: ${status.answer.prompt}`
+          : claudeRunning
+            ? 'Claude is busy; answer when it stops'
+            : "Claude isn't running; start it first"
+      }
+      onClick={(e) => {
+        e.stopPropagation();
+        answer.mutate({ workspaceId });
+      }}
+    >
+      {status.answer.label}
+    </button>
   );
 }
 

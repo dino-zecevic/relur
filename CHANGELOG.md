@@ -6,7 +6,12 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- Home has two tabs, like a workspace: **Overview** (⌃1, where Home opens) and **Terminal** (⌃2, the profile's Home terminal). The Overview shows what needs you (with **Open**, **Review** and a gate's answer, **Continue** and **Dismiss**), what is working (for how long, and its memory), what is ready to ship (**Commit…**, **Push**, **View PR**) and merged workspaces to clean up (**Delete**, or **Delete n merged workspaces** in one dialog), with the profile's projects and quick actions beside them. Rows work with ↑↓, ↵ and Tab. **All clear** when there is nothing, **Add your first project** in a profile without projects.
 - How much memory Claude sessions use, with every process they started (MCP servers, shells, background commands, dev servers): **Memory** in the status bar, with the five largest workspaces and the app's own memory in its tooltip; a sortable **Memory** column in the project's Workspaces table; and the project's total in its view. Measured every 10 seconds while the window is visible.
+
+### Removed
+
+- The panel over the Home terminal and its key ⌘.: what it showed is in Home's Overview.
 
 ## [0.3.2] - 2026-11-04
 
