@@ -122,3 +122,11 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             assets/*
+
+      # The landing page reads the latest version when it's built.
+      - name: Rebuild the landing page
+        env:
+          HOOK: ${{ secrets.LANDING_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then echo "No LANDING_DEPLOY_HOOK secret: skipped"; exit 0; fi
+          curl -fsS -X POST "$HOOK" > /dev/null
