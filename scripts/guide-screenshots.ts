@@ -48,8 +48,11 @@ const HEIGHT = 800;
 /** The Guide's column is 660 px; images are shown at half their pixel size. */
 const MAX_PIXEL_WIDTH = 1320;
 const MAX_BYTES = 150 * 1024;
-/** A minute lasts this long here, so "suspend after 5 minutes" is 10 seconds. */
-const MINUTE_MS = 2000;
+/** A minute lasts this long here, so "suspend after 10 minutes" is 10 seconds. */
+const MINUTE_MS = 1000;
+/** Both profiles' suspend delay, the default (spec §9.8). Written, so the
+ * one-time "now suspends" notice for profiles without one never shows. */
+const SUSPEND_MIN = 10;
 
 /** The memory panel's story: about 2.4 GB, one workspace with a big dev server (MB). */
 const MEMORY = {
@@ -324,7 +327,7 @@ async function main() {
             claude,
             env: {},
             defaults: { baseBranch: 'main' },
-            suspendIdleMin: 5,
+            suspendIdleMin: SUSPEND_MIN,
             workflow: {
               file: 'docs/specs/*/specification.md',
               match: { field: 'branch', equals: 'branch' },
@@ -365,6 +368,7 @@ async function main() {
             claude,
             env: { CLAUDE_CONFIG_DIR: '~/.claude-personal' },
             defaults: { baseBranch: 'main' },
+            suspendIdleMin: SUSPEND_MIN,
           },
         ],
         projects: [
@@ -408,6 +412,9 @@ async function main() {
     const noThanks = `[...document.querySelectorAll('button')].find((b) => b.textContent === 'No thanks')`;
     await page.waitFor(`!!${noThanks}`, 'the update question');
     await page.eval(`${noThanks}.click()`);
+    if (await page.eval<boolean>(`!!document.querySelector('[data-suspend-notice]')`)) {
+      throw new Error('the one-time suspend notice shows: give every profile a suspendIdleMin');
+    }
 
     const control = async (id: string, command: string) => {
       const fifo = path.join(home, 'ctl', id);
@@ -533,11 +540,11 @@ async function main() {
       'the sidebar states',
       20_000,
     );
-    // ABC-133 is idle and not shown: suspended after its 5 "minutes".
+    // ABC-133 is idle and not shown: suspended after its 10 "minutes".
     await page.waitFor(
       `(${rowOf('ABC-133')})?.dataset.suspended === 'true'`,
       'ABC-133 suspended',
-      5 * MINUTE_MS + 30_000,
+      SUSPEND_MIN * MINUTE_MS + 30_000,
     );
     await sleep(1500);
 
@@ -660,12 +667,22 @@ async function main() {
         );
       }
       await page.eval('document.activeElement?.blur()');
+      // Down to Suspend idle sessions, at its default.
+      await page.eval(
+        `document.querySelector('dialog[open] [data-suspend-settings]').scrollIntoView({ block: 'end' })`,
+      );
       await sleep(400);
     };
     await openEdit();
+    // Its lower settings, down to Suspend idle sessions: the dialog is taller than the window.
     await shoot(
       'edit-profile',
-      { selectors: ['dialog[open]'], bottom: 'dialog[open] [data-pr-commands]' },
+      {
+        selectors: ['dialog[open] [data-sounds]', 'dialog[open] [data-suspend-settings]'],
+        pad: 14,
+        bottom: 'dialog[open] [data-suspend-settings]',
+        below: 8,
+      },
       openEdit,
     );
     await pressKey(page, 'Escape');
