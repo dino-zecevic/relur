@@ -4,14 +4,34 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-05
+
+### Highlights
+
+Relur can now suspend idle Claude sessions: sessions you aren't using are stopped to free memory and resume in the same conversation when you open them. It's off by default and turned on per profile in **Edit profile › General**; sessions that are working, waiting for permission, running background work, holding an unsent prompt or marked **Keep Claude Running** are never suspended. Home gets an Overview of everything that needs you, and Relur now shows how much memory your Claude sessions use.
+
 ### Added
 
 - Home has two tabs, like a workspace: **Overview** (⌃1, where Home opens) and **Terminal** (⌃2, the profile's Home terminal). The Overview shows what needs you (with **Open**, **Review** and a gate's answer, **Continue** and **Dismiss**), what is working (for how long, and its memory), what is ready to ship (**Commit…**, **Push**, **View PR**) and merged workspaces to clean up (**Delete**, or **Delete n merged workspaces** in one dialog), with the profile's projects and quick actions beside them. Rows work with ↑↓, ↵ and Tab. **All clear** when there is nothing, **Add your first project** in a profile without projects.
 - How much memory Claude sessions use, with every process they started (MCP servers, shells, background commands, dev servers): **Memory** in the status bar, a bar and "2.4 GB of 16 GB" for the sessions and the app relative to the machine's RAM, which opens a panel with the split, the five largest workspaces and what each term means; a sortable **Memory** column in the project's Workspaces table; and the project's total in its view. A Guide page explains what counts and why the numbers run higher than Activity Monitor's. Measured every 10 seconds while the window is visible.
+- Suspend idle Claude sessions (**Edit profile › General**: off, or after 5, 10 or 30 minutes). A session that has been idle for the whole delay, not shown, and has no background work or unsent prompt is stopped and marked **Suspended**; opening it resumes it in the same conversation, with its permission mode and model. **Keep Claude Running** (right-click a workspace in the sidebar) keeps a session from being suspended. The Workspaces table's Status tooltip says why a running session isn't suspended, or when it will be, and the memory panel lists the suspended sessions. With the setting on, workspaces start suspended at launch, except the one shown and those continued.
+- New workspace asks the remote and fetches the base branch as soon as it opens, so Create is quicker; both give up after 30 seconds.
+- New workspace looks a task id up while you type it and shows the title it found, so it is often ready when you press ↵. **Create now**, next to **Stop**, creates the workspace at once without waiting for the lookup. A title found for an id is remembered while the app runs, so the same id doesn't need another lookup.
+- `app.log` in the app's config folder records how long each step of Create and of a task lookup takes, and when idle sessions are suspended and resumed, and why a session's idle time started over.
+
+### Changed
+
+- A **Done** notification waits while Claude waits for its background commands: the workspace stays Working, with the number of commands, until they hand back and Claude finishes, or for at most 10 minutes. You get one Done instead of two.
+- Dev servers (including `python3 -m http.server`) are recognised: a session that leaves one running is Done at once, with "1 still running in the background".
 
 ### Removed
 
 - The panel over the Home terminal and its key ⌘.: what it showed is in Home's Overview.
+
+### Fixed
+
+- **Stop** pressed right after ↵ in a task lookup could be lost, and the lookup ran anyway.
+- Moving the mouse over a Claude terminal counted as typed text, so such a session was never suspended.
 
 ## [0.3.2] - 2026-11-04
 
@@ -80,7 +100,8 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/relur-dev/relur/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/relur-dev/relur/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/relur-dev/relur/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/relur-dev/relur/compare/v0.2.0...v0.3.0
