@@ -25,7 +25,7 @@ A new git worktree of this repository has no `node_modules`: run `npm ci` there 
 | --- | --- |
 | `npm run dev` | The app with the Vite dev server |
 | `npm run check` | Lint (Biome), typecheck, unit tests (Vitest), the product-name check and the notices check |
-| `npm run e2e` | End-to-end tests against the production build and the dev server, with a fake `claude` (several minutes) |
+| `npm run e2e` | Every end-to-end suite in `scripts/e2e-suites.json` against the production build and the dev server, with a fake `claude` (several minutes) |
 | `npm run verify` | `check`, then `e2e` |
 | `npm run install-app` | Build and install the app on this machine |
 | `npm run package -- --arch all` | On a Mac: zips and dmgs for arm64 and x64, with `SHA256SUMS`, in `dist/` |
@@ -38,6 +38,7 @@ Pushing a version tag runs `.github/workflows/release.yml`, which builds and pub
 ## Rules for a change
 
 - **`npm run verify` passes** before you open a pull request. The e2e tests use a fake `claude`, never the real one.
+- **A new e2e suite** is a `scripts/e2e-<name>.ts` file with `<name>` added to `scripts/e2e-suites.json`, the one list that `npm run e2e`, `scripts/linux-check.sh` and CI all run; `npm run check` fails while a suite file isn't listed. `tsx scripts/e2e.ts [--mode prod|dev] [suite…]` runs some of them after `npm run build`.
 - **The spec is the source of truth.** A change in behaviour updates [docs/SPEC.md](../docs/SPEC.md) in the same pull request, with e2e coverage of the new behaviour.
 - **The Guide follows the spec.** The in-app Guide's pages (`src/renderer/src/guide/pages/`, ordered in `guide/content.ts`) are updated with every behaviour change they describe.
 - **No company-specific content.** No company names, internal hosts, accounts or other organisation-specific values in code, tests, docs or examples. Use generic ones (`ABC-142`, `you@example.com`).

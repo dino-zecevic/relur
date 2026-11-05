@@ -8,34 +8,6 @@ npm run build
 # Chromium's sandbox stays on: linux-check.sh gives the container user
 # namespaces (seccomp=unconfined), as a desktop has.
 xvfb-run -a npx electron . --self-test
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-smoke.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-smoke.ts --dev
-# Onboarding with a fake claude; Claude Code isn't installed in the image, so
-# the first phase checks the "not installed" state for real.
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-onboarding.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-onboarding.ts --dev
-# Quitting and closing the window (on Linux closing quits, asking first).
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-quit.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-quit.ts --dev
-# Continuing interrupted work after a restart (spec §9.7).
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-continue.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-continue.ts --dev
-# Clicking a notification (spec §10.3).
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-notifications.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-notifications.ts --dev
-# New versions, against a fake release endpoint (spec §15.7).
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-updates.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-updates.ts --dev
-# Suspending idle sessions (spec §9.8), Home (spec §6.7), adding and creating
-# repositories, and terminal tabs.
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-suspend.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-suspend.ts --dev
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-home.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-home.ts --dev
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-repositories.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-repositories.ts --dev
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-terminals.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-terminals.ts --dev
-# Prompt markers on their own lines, through resizes, resumes and restarts (spec §6.8).
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-markers.ts
-xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-markers.ts --dev
+# Every e2e suite in scripts/e2e-suites.json, on the production build and the
+# dev server, each under its own xvfb-run.
+npx tsx --tsconfig tsconfig.node.json scripts/e2e.ts --xvfb

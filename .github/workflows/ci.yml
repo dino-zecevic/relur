@@ -51,12 +51,17 @@ jobs:
       - name: Check
         run: npm run check
 
-  # The e2e suites on the production build, as scripts/linux-check.sh runs
-  # them, with Chromium's sandbox on. Ubuntu 24.04 keeps unprivileged user
+  # Every e2e suite in scripts/e2e-suites.json, as scripts/linux-check.sh
+  # runs them, with Chromium's sandbox on: the production build and the dev
+  # server in two jobs side by side. Ubuntu 24.04 keeps unprivileged user
   # namespaces from programs without an AppArmor profile, which Electron in
   # node_modules is; the runner lifts that restriction for the job.
   e2e-linux:
-    name: e2e (linux)
+    name: e2e (linux, ${{ matrix.mode }})
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [prod, dev]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -88,7 +93,4 @@ jobs:
         run: xvfb-run -a npx electron . --self-test
 
       - name: e2e
-        run: |
-          for test in smoke onboarding quit continue updates suspend home repositories terminals markers; do
-            xvfb-run -a npx tsx --tsconfig tsconfig.node.json "scripts/e2e-$test.ts"
-          done
+        run: npx tsx --tsconfig tsconfig.node.json scripts/e2e.ts --xvfb --mode ${{ matrix.mode }}

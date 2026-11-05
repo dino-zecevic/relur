@@ -8,7 +8,7 @@ An Electron desktop app (macOS and Linux) for running parallel Claude Code sessi
 - `src/renderer/src`: the UI; `components/`, `ui/` (shared controls), `guide/` (the in-app Guide: Markdown pages in `guide/pages/`, ordered in `guide/content.ts`).
 - `src/shared`: types, schemas, shortcuts (`shortcuts.ts` is the only definition of every key), status, and `brand.ts`.
 - `src/helper`: the small executable for hooks, the status line and the command line tool (`add`, `link`), compiled with bun.
-- `scripts`: build, packaging, installer template, notices (`gen-notices.ts`), e2e tests (`e2e-smoke.ts`, `e2e-onboarding.ts`, `e2e-quit.ts`, driver in `scripts/lib/`) and the Linux checks in Docker.
+- `scripts`: build, packaging, installer template, notices (`gen-notices.ts`), e2e tests (`e2e-*.ts`, listed in `e2e-suites.json` and run by `e2e.ts`; driver in `scripts/lib/`) and the Linux checks in Docker.
 - `docs/SPEC.md` (the specification), `docs/components.md` (component sizes, states and keyboard behaviour), `docs/images/` (the README's screenshots).
 - **Names:** the product name, its old name, the bundle id, env var prefix and folder names come from `src/shared/brand.ts` only. Never write them anywhere else in code; `npm run check:name` fails if you do (docs/ and README are exempt).
 
