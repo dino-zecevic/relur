@@ -4,14 +4,19 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-05
+
+### Changed
+
+- The Responses panel shows one entry per prompt, with Claude's messages as its parts. **Copy** copies the whole answer, **Copy last part** only Claude's last message, and ⌥C the whole latest answer. A pasted prompt or a skill command gets its own entry, and Claude's paste tags no longer show in a prompt. An answer interrupted with Esc keeps what Claude wrote until then and is marked **Interrupted**.
+- **Start Claude**, and ↵ in a Claude tab whose Claude has exited, restart Claude in the same tab instead of opening a new one.
+
 ### Fixed
 
-- Prompt numbers in a Claude tab could sit next to a line of Claude's answer that repeated the prompt's words, for a prompt typed and pasted into. A number now goes only on the line where Claude shows the sent prompt, never on an answer or on what you're typing, and a prompt whose line can't be found for certain gets none.
-- Prompts Relur sends for you (Continue, a workflow's answer buttons, Ask Claude to write it, Create PR through Claude), and short ones such as "ok", got no number, so the prompt navigator was missing in some tabs. They are numbered like any other prompt now.
-- After a restart or a resume, the prompts Claude prints again get their numbers back, and the navigator shows; before, only prompts sent afterwards were numbered. The Responses panel no longer shows Claude's paste tags in a prompt.
-- A workspace whose Claude had not been sent a prompt yet could be suspended, and then couldn't be opened again: Claude said "No conversation found with session ID", and every **Start Claude** failed the same way in a new tab. Claude is no longer suspended before it has a conversation to resume. Where there is none, Claude starts a new conversation in the same tab and says so above the terminal; workspaces already in that state recover on the next **Start Claude**.
-- **Start Claude**, and ↵ in a Claude tab whose Claude has ended, start Claude again in that tab instead of opening another one.
-- In the Responses panel, a prompt interrupted with Esc keeps its entry with what Claude wrote until then, now marked **Interrupted**.
+- Clicking a notification opens its workspace, also with the window minimized or closed; before, it only brought Relur to the front.
+- Prompt numbers no longer land on lines of Claude's answer that repeat a prompt's words, also after pasting into a prompt or resizing the window. A number goes only on the line where Claude shows the sent prompt. Prompts Relur sends for you (Continue, a workflow's answer buttons, Ask Claude to write it) and short ones such as "ok" are numbered too, and after a restart or a resumed session the numbers and the prompt navigator come back (in classic mode).
+- A workspace whose Claude had no conversation yet broke when it was suspended: Claude said "No conversation found with session ID", and every **Start Claude** failed the same way in a new tab. Such sessions are no longer suspended. Where there is no conversation to resume, Claude starts a new one in the same tab and says so above the terminal, so workspaces already in that state recover on the next **Start Claude**.
+- Esc closes **Add project** after a clone that failed at once.
 
 ## [0.4.0] - 2026-11-05
 
@@ -109,7 +114,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/relur-dev/relur/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/relur-dev/relur/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/relur-dev/relur/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/relur-dev/relur/compare/v0.3.0...v0.3.1
