@@ -20,6 +20,9 @@ xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-quit.ts --dev
 # Continuing interrupted work after a restart (spec §9.7).
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-continue.ts
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-continue.ts --dev
+# Clicking a notification (spec §10.3).
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-notifications.ts
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-notifications.ts --dev
 # New versions, against a fake release endpoint (spec §15.7).
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-updates.ts
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-updates.ts --dev

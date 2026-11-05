@@ -1134,6 +1134,8 @@ export function createAppRouter({
       openRequests: publicProcedure.subscription(({ signal }) =>
         fromListener<string>((listener) => statusPlatform.onOpen(listener), signal),
       ),
+      /** A click that waited for a page, as a window opened for it; asked once at start. */
+      takeOpenRequest: publicProcedure.mutation(() => statusPlatform.takeOpenRequest()),
       /** What the calling window shows, for "unless that Claude tab is visible" (spec §10.3). */
       setVisible: publicProcedure
         .input(

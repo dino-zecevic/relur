@@ -429,7 +429,8 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
         usage.save(profileId, snapshot);
       }
     });
-    statusPlatform.onOpen(() => showMainWindow());
+    // A clicked notification brings the window forward, or opens it (spec §10.3).
+    statusPlatform.onClicked(() => showMainWindow());
     // Prompt markers and Copy buttons in Claude tabs (spec §6.8): each event is
     // marked in the Claude session's output, a response with its text from the
     // transcript once it is written there (after the Stop hook).

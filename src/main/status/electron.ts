@@ -5,6 +5,7 @@ import { app, BrowserWindow, Notification, webContents } from 'electron';
 import type { ConfigStore } from '../config/store';
 import { linuxIconPath, testWindows } from '../window';
 import { LauncherBadge, sessionBusPath } from './launcher-entry';
+import { NotificationClicks } from './notification-clicks';
 import type { Alert, StatusPlatform } from './service';
 
 /** The window title with the count in front on Linux: `(2) Work — <name>` (spec §15.5). */
@@ -27,7 +28,12 @@ interface Visible {
 export class ElectronStatusPlatform implements StatusPlatform {
   private readonly visible = new Map<number, Visible>();
   private readonly events = new EventEmitter();
-  /** Notifications a scripted test reads (`globalThis.__notifications`); none are shown then. */
+  /** Shown notifications and their clicks (spec §10.3). */
+  private readonly clicks = new NotificationClicks();
+  /**
+   * Notifications a scripted test reads (`globalThis.__notifications`); none
+   * are shown then. `globalThis.__clickNotification(i)` clicks the i-th.
+   */
   private readonly recorded: Alert[] = [];
   private readonly testRun = testWindows();
   /** Linux: the launcher badge over the session bus, where the dock shows one. */
@@ -44,7 +50,18 @@ export class ElectronStatusPlatform implements StatusPlatform {
   private readonly tracked = new WeakSet<BrowserWindow>();
 
   constructor(private readonly config: ConfigStore) {
-    if (this.testRun) (globalThis as { __notifications?: Alert[] }).__notifications = this.recorded;
+    if (this.testRun) {
+      const test = globalThis as {
+        __notifications?: Alert[];
+        __clickNotification?: (index: number) => void;
+      };
+      test.__notifications = this.recorded;
+      test.__clickNotification = (index) => {
+        const alert = this.recorded.at(index);
+        if (!alert) throw new Error(`no notification ${index}`);
+        this.clicks.click(alert.workspaceId);
+      };
+    }
   }
 
   setVisible(webContentsId: number, visible: Visible): void {
@@ -105,14 +122,24 @@ export class ElectronStatusPlatform implements StatusPlatform {
       // Linux: the app's icon; packaged builds also name their desktop entry.
       ...(process.platform === 'linux' ? { icon: linuxIconPath() } : {}),
     });
-    notification.on('click', () => this.events.emit('open', alert.workspaceId));
-    notification.show();
+    // Kept referenced until clicked or closed: Electron drops the click
+    // handler of a collected notification.
+    this.clicks.show(notification, alert.workspaceId);
   }
 
-  /** A notification was clicked: open that workspace's Claude tab. */
+  /** A notification was clicked: bring the window forward, or open one. */
+  onClicked(listener: () => void): () => void {
+    return this.clicks.onClicked(listener);
+  }
+
+  /** The workspace of a clicked notification, for a listening page to open its Claude tab. */
   onOpen(listener: (workspaceId: string) => void): () => void {
-    this.events.on('open', listener);
-    return () => this.events.off('open', listener);
+    return this.clicks.onOpen(listener);
+  }
+
+  /** A click that waited for a page (the window had to open), taken once. */
+  takeOpenRequest(): string | null {
+    return this.clicks.take();
   }
 
   setBadge(count: number): void {

@@ -200,13 +200,24 @@ export function App() {
       },
     }),
   );
-  // A clicked notification opens that workspace's Claude tab.
+  // Opens a workspace's Claude tab (⌘J, Home, a clicked notification).
   const openRequest = useRef<(workspaceId: string) => void>(() => {});
+  // A clicked notification (spec §10.3), until the workspaces and sessions
+  // are loaded: a window just opened for the click has none yet.
+  const [notificationClick, setNotificationClick] = useState<string | null>(null);
   useSubscription(
     trpc.status.openRequests.subscriptionOptions(undefined, {
-      onData: (workspaceId) => openRequest.current(workspaceId),
+      onData: setNotificationClick,
     }),
   );
+  // A click that came while no window was open waits in the main process.
+  useEffect(() => {
+    void trpcClient.status.takeOpenRequest.mutate().then((workspaceId) => {
+      if (workspaceId) setNotificationClick(workspaceId);
+    });
+  }, []);
+  // The workspace whose Claude terminal takes the focus once it is shown.
+  const [focusClaudeOf, setFocusClaudeOf] = useState<string | null>(null);
   useSubscription(
     trpc.setup.changes.subscriptionOptions(undefined, {
       onData: () => {
@@ -357,6 +368,15 @@ export function App() {
     if (claude) showSession(claude);
     else openWorkspace(target);
   };
+  // A workspace that no longer exists (deleted since, or the notification is
+  // from before a restart) leaves the app as it is.
+  useEffect(() => {
+    if (!notificationClick || !workspaces.data || !sessions.data) return;
+    setNotificationClick(null);
+    if (!workspaces.data.some((w) => w.id === notificationClick)) return;
+    openRequest.current(notificationClick);
+    setFocusClaudeOf(notificationClick);
+  }, [notificationClick, workspaces.data, sessions.data]);
   const [newWorkspace, setNewWorkspace] = useState<{ project: Project | null } | null>(null);
   const [deleting, setDeleting] = useState<Workspace | null>(null);
   // Home's Delete n merged workspaces (spec §6.7): one dialog for all of them.
@@ -470,6 +490,13 @@ export function App() {
         void queryClient.invalidateQueries({ queryKey: trpc.sessions.suspendClocks.queryKey() }),
     }),
   );
+  // A clicked notification's workspace is shown: its Claude terminal takes the
+  // focus (spec §10.3). The workspace view listens by then (children's effects run first).
+  useEffect(() => {
+    if (!focusClaudeOf || visibleWorkspace !== focusClaudeOf) return;
+    setFocusClaudeOf(null);
+    window.dispatchEvent(new CustomEvent(FOCUS_CLAUDE_EVENT, { detail: focusClaudeOf }));
+  }, [focusClaudeOf, visibleWorkspace]);
   const markRead = useMutation(trpc.status.markRead.mutationOptions());
   // biome-ignore lint/correctness/useExhaustiveDependencies: report changes only
   useEffect(() => {
