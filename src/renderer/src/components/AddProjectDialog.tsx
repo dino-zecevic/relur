@@ -784,7 +784,8 @@ function CloneForm({ profile, projects, onClose, onAdded }: FormProps & { projec
   );
 
   // The terminal has the focus while git runs (for prompts); after a failure
-  // it goes back to the URL, so Esc cancels and the URL can be fixed.
+  // it goes back to the URL, so Esc cancels and the URL can be fixed, also
+  // when git failed before the terminal connected.
   const urlRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (failed) urlRef.current?.focus();
@@ -864,7 +865,7 @@ function CloneForm({ profile, projects, onClose, onAdded }: FormProps & { projec
             </span>
           </div>
           <div className="h-[180px]">
-            <TerminalView sessionId={session.id} />
+            <TerminalView sessionId={session.id} focusOnConnect={!failed} />
           </div>
         </div>
       ) : null}

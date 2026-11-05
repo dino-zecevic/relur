@@ -72,6 +72,24 @@ describe('locate', () => {
     );
   });
 
+  it("finds a prompt only where it starts a line, not inside Claude's output", () => {
+    // Searched from the response up, as after a resize: "four" also ends the line above it.
+    const text = new LineText([
+      '❯ four',
+      '  answer 0 to four',
+      '  then four',
+      '⏺ Answer four.',
+      '',
+      '❯',
+    ]);
+    const response = text.findBefore({ text: 'Answer four.', at: 'end' }, text.endOf(5));
+    expect(response?.line).toBe(3);
+    expect(text.findBefore({ text: 'four', at: 'start' }, response?.offset ?? 0)?.line).toBe(0);
+    // A prompt not at a line's start anywhere isn't found.
+    expect(text.findBefore({ text: 'then four', at: 'start' }, text.endOf(5))?.line).toBe(2);
+    expect(text.findBefore({ text: 'to four', at: 'start' }, text.endOf(5))).toBeNull();
+  });
+
   it('finds a response whose Markdown shows differently, by its last line', () => {
     // As Claude Code shows a table, a link (with its address) and a code block.
     const text = new LineText([

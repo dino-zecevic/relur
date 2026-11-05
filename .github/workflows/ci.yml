@@ -89,6 +89,6 @@ jobs:
 
       - name: e2e
         run: |
-          for test in smoke onboarding quit continue updates; do
+          for test in smoke onboarding quit continue updates suspend home repositories terminals; do
             xvfb-run -a npx tsx --tsconfig tsconfig.node.json "scripts/e2e-$test.ts"
           done

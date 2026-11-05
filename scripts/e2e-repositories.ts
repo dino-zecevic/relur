@@ -244,9 +244,11 @@ exec sleep 600
       `document.querySelector('[data-detail=Remote] dd')?.textContent === 'none'`,
       'none shown',
     );
-    // Chosen on purpose: the origin already there isn't picked up again.
+    // Chosen on purpose: the origin already there isn't picked up again. The
+    // focus comes from the event loop, as a real one does: the debugger's eval
+    // can run in the middle of other code, such as a state.db query.
     await mainProcess.eval(
-      `process.mainModule.require('electron').app.emit('browser-window-focus')`,
+      `setImmediate(() => process.mainModule.require('electron').app.emit('browser-window-focus'))`,
     );
     await sleep(800);
     assert.equal(project('fresh-app')?.remote, null, 'none stays none');
@@ -328,6 +330,10 @@ exec sleep 600
     assert.equal(project('missing'), undefined);
     assert.equal(fs.existsSync(path.join(code, 'missing')), false);
     assert.equal(await page.eval(hasButton('Try again')), true);
+    // The focus is back on the URL, also when git failed before its terminal connected.
+    await page.waitFor(`document.activeElement?.id === 'clone-url'`, 'the focus on the URL');
+    await sleep(300);
+    assert.equal(await page.eval(`document.activeElement?.id`), 'clone-url', 'it stays there');
     await pressKey(page, 'Escape');
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
 

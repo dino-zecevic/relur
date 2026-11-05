@@ -26,3 +26,13 @@ xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-notifications.ts -
 # New versions, against a fake release endpoint (spec §15.7).
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-updates.ts
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-updates.ts --dev
+# Suspending idle sessions (spec §9.8), Home (spec §6.7), adding and creating
+# repositories, and terminal tabs.
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-suspend.ts
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-suspend.ts --dev
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-home.ts
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-home.ts --dev
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-repositories.ts
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-repositories.ts --dev
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-terminals.ts
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-terminals.ts --dev

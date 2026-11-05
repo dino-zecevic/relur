@@ -550,8 +550,17 @@ export async function submitDialog(page: Cdp): Promise<void> {
   await page.eval(`${button}.click()`);
 }
 
-export const clickLabel = (page: Cdp, label: string) =>
-  page.eval(`document.querySelector('[aria-label=${JSON.stringify(label)}]').click()`);
+/**
+ * Clicks the element with this aria-label once it is there and enabled. A
+ * change made outside the page (such as `add` from the command line) reaches
+ * it through a subscription, a render later; on a slow machine that can be
+ * after the next step's click.
+ */
+export async function clickLabel(page: Cdp, label: string): Promise<void> {
+  const element = `document.querySelector('[aria-label=${JSON.stringify(label)}]')`;
+  await page.waitFor(`!!${element} && !${element}.disabled`, `"${label}"`);
+  await page.eval(`${element}.click()`);
+}
 
 /** A button's label without its shortcut hint (<kbd>), as an expression on `b`. */
 const buttonLabel = `[...b.childNodes].filter((n) => n.nodeName !== 'KBD').map((n) => n.textContent).join('').trim()`;

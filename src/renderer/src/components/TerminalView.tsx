@@ -57,8 +57,11 @@ export function TerminalView({
   sessionId,
   conversation,
   resuming = false,
+  focusOnConnect = true,
 }: {
   sessionId: string;
+  /** Whether it takes the focus once connected; read then, so a late connection follows it. */
+  focusOnConnect?: boolean;
   /**
    * A suspended Claude that resumes (spec §9.8): "Resuming…" over the
    * terminal, and keys typed meanwhile aren't sent, with a note saying so.
@@ -90,6 +93,8 @@ export function TerminalView({
   const [fontReady, setFontReady] = useState(fontsLoaded);
   const resumingRef = useRef(resuming);
   resumingRef.current = resuming;
+  const focusOnConnectRef = useRef(focusOnConnect);
+  focusOnConnectRef.current = focusOnConnect;
   const [blocked, setBlocked] = useState(false);
   useEffect(() => {
     if (!resuming) setBlocked(false);
@@ -310,7 +315,7 @@ export function TerminalView({
         for (const data of queued.splice(0)) send(data);
         container.dataset.connected = 'true';
         sendSize();
-        term.focus();
+        if (focusOnConnectRef.current) term.focus();
       })
       .catch((error: unknown) => {
         term.write(`\x1b[31m${error instanceof Error ? error.message : String(error)}\x1b[0m\r\n`);

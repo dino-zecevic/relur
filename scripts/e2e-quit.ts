@@ -275,13 +275,10 @@ exec sleep 600
         const running = await launchApp({ env, dev: devMode, electronArgs });
         app = running;
         const before = await running.page.eval<string | null>(remembered);
-        await running.page.waitFor(
-          `!!document.querySelector('[data-nav-key="p:notes"] button[aria-label="Expand"]')`,
-          'the project',
-        );
-        await running.page.eval(
-          `document.querySelector('[data-nav-key="p:notes"] button[aria-label="Expand"]').click()`,
-        );
+        // Expanded by the first round and remembered, so the second collapses it.
+        const toggle = `document.querySelector('[data-nav-key="p:notes"] button:is([aria-label="Expand"], [aria-label="Collapse"])')`;
+        await running.page.waitFor(`!!${toggle}`, 'the project');
+        await running.page.eval(`${toggle}.click()`);
         await running.page.waitFor(`${remembered} !== ${JSON.stringify(before)}`, 'the change');
         const changed = await running.page.eval<string | null>(remembered);
         // A moment later, as no one logs out within a fraction of a second.

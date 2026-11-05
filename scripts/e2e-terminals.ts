@@ -208,7 +208,12 @@ exec sleep 600
 
     // Narrow: Alpha's early prompts scroll out of view; Beta still shows only its own 1.
     await setSize(820, 520);
-    await sleep(800);
+    // Markers are placed again once the output settles after a resize (spec
+    // §6.8); on Linux the window can take several resizes to get there.
+    await page.waitFor(
+      `(${shownJs}).marks.some((m) => m.n === '3')`,
+      "Alpha's last marker after the resize",
+    );
     const narrow = await check('AAA-1', 'Alpha', ['1', '2', '3'], false);
     assert.ok(narrow.includes('3'), 'the last prompt is in view');
     await check('BBB-2', 'Beta', ['1'], true);
@@ -262,12 +267,12 @@ exec sleep 600
       );
     };
     /** Each placed mark's line in the shown terminal: its kind, number and the line's text. */
-    const markLines = () =>
-      page.eval<string[]>(`(() => {
+    const markLinesJs = `(() => {
         const c = [...document.querySelectorAll('[data-terminal]')].find((t) => t.offsetParent);
         return c.aids.marks.filter((m) => m.marker && !m.marker.isDisposed).map((m) =>
           m.mark.kind + ' ' + c.xterm.buffer.active.getLine(m.marker.line).translateToString(true).trim());
-      })()`);
+      })()`;
+    const markLines = () => page.eval<string[]>(markLinesJs);
     /** What the conversation aids show in the terminal: prompt numbers, Copy buttons, the navigator. */
     const aidsShown = `(() => {
       const visible = (s) => [...document.querySelectorAll(s)].filter((m) => m.style.display !== 'none' && m.offsetParent).length;
@@ -327,11 +332,15 @@ exec sleep 600
     await page.waitFor(`(${aidsShown}).copies === 1`, "Gamma's Copy button");
     await otherProfile();
     await page.waitFor(`(${aidsShown}).copies === 1`, "Gamma's Copy button after the switch");
-    assert.deepEqual(
-      await markLines(),
-      ['prompt ❯ four', 'response ⏺ Answer four.'],
-      'Gamma: marks on their own lines',
-    );
+    // The marks are placed again once the replay's output settles (spec §6.8).
+    const gammaLines = ['prompt ❯ four', 'response ⏺ Answer four.'];
+    await page
+      .waitFor(
+        `JSON.stringify(${markLinesJs}) === ${JSON.stringify(JSON.stringify(gammaLines))}`,
+        "Gamma's marks",
+      )
+      .catch(() => {});
+    assert.deepEqual(await markLines(), gammaLines, 'Gamma: marks on their own lines');
 
     console.log(`e2e terminals test passed (${devMode ? 'dev server' : 'production build'})`);
   } catch (error) {

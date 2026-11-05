@@ -80,16 +80,18 @@ export class LineText {
   /**
    * The last occurrence of the needle that ends at or before offset `before`:
    * the line of its start or end, and its start offset, to search on from.
+   * A prompt starts its line (Claude Code shows it after ❯), so a prompt's
+   * text inside another line, such as Claude's answer, doesn't count.
    */
   findBefore(needle: Needle, before: number): { line: number; offset: number } | null {
     for (const key of keysOf(needle)) {
-      if (before < key.length) continue;
-      const at = this.joined.lastIndexOf(key, before - key.length);
-      if (at === -1) continue;
-      return {
-        line: this.lineAt(needle.at === 'start' ? at : at + key.length - 1),
-        offset: at,
-      };
+      for (let from = before - key.length; from >= 0; ) {
+        const at = this.joined.lastIndexOf(key, from);
+        if (at === -1) break;
+        const line = this.lineAt(needle.at === 'start' ? at : at + key.length - 1);
+        if (needle.at === 'end' || this.starts[line] === at) return { line, offset: at };
+        from = at - 1;
+      }
     }
     return null;
   }
