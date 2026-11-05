@@ -8,6 +8,7 @@ import { GuideLink } from '../guide/link';
 import { useTRPC } from '../trpc';
 import { ProfileDot } from '../ui/profile-color';
 import { StatusGlyph } from '../ui/StatusGlyph';
+import type { SuspendedSession } from '../ui/suspended';
 import { MemoryStatus } from './MemoryStatus';
 import { UsageMeter } from './UsageMeter';
 
@@ -29,7 +30,7 @@ export function StatusBar({
   notice,
   workspaces,
   memory,
-  suspendedSessions = 0,
+  suspendedSessions = [],
 }: {
   profile: Profile | null;
   location: string;
@@ -45,7 +46,7 @@ export function StatusBar({
   /** Memory of every Claude session and the app (spec §6.14); null before the first measurement. */
   memory: MemorySnapshot | null;
   /** Claude sessions suspended to save memory, in every profile (spec §9.8). */
-  suspendedSessions?: number;
+  suspendedSessions?: SuspendedSession[];
 }) {
   const trpc = useTRPC();
   const diagnostics = useQuery(trpc.env.diagnostics.queryOptions());

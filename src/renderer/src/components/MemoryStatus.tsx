@@ -12,6 +12,7 @@ import {
 import { suspendedNote } from '@shared/suspend';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useOpenGuide } from '../guide/link';
+import type { SuspendedSession } from '../ui/suspended';
 import { MeterBar } from './UsageMeter';
 
 /**
@@ -21,11 +22,11 @@ import { MeterBar } from './UsageMeter';
  */
 export function MemoryStatus({
   memory,
-  suspended = 0,
+  suspended = [],
 }: {
   memory: MemorySnapshot;
   /** Claude sessions suspended to save memory, in every profile (spec §9.8). */
-  suspended?: number;
+  suspended?: SuspendedSession[];
 }) {
   const [open, setOpen] = useState(false);
   const wrapper = useRef<HTMLSpanElement>(null);
@@ -109,7 +110,7 @@ function MemoryPanel({
   id: string;
   panelRef: React.Ref<HTMLDivElement>;
   memory: MemorySnapshot;
-  suspended: number;
+  suspended: SuspendedSession[];
   onLearnMore: () => void;
 }) {
   const openGuide = useOpenGuide();
@@ -135,10 +136,20 @@ function MemoryPanel({
       <div className="mt-2 space-y-1" data-memory-split>
         <Row label="Claude sessions" value={formatBytes(sessionsTotal(memory))} />
         <Row label="This app" value={formatBytes(memory.app)} />
-        {/* Suspended sessions use none until opened (spec §9.8). */}
-        {suspended > 0 ? (
+        {/* Suspended sessions use none until opened (spec §9.8), listed by name. */}
+        {suspended.length > 0 ? (
           <div data-memory-suspended className="text-xs text-fg-muted">
-            {suspendedNote(suspended)} to save memory; they use none until opened.
+            {suspendedNote(suspended.length)} to save memory; they use none until opened:
+            <ul className="mt-1 space-y-0.5" data-memory-suspended-list>
+              {suspended.map((s) => (
+                <li key={s.id} className="flex items-baseline gap-2">
+                  <span className="min-w-0 flex-1 truncate text-fg" title={s.name}>
+                    {s.name}
+                  </span>
+                  {s.where ? <span className="flex-none text-fg-subtle">{s.where}</span> : null}
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
       </div>

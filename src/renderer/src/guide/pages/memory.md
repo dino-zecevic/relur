@@ -25,7 +25,7 @@ Shells you open yourself in a workspace's terminal tabs aren't counted, and neit
 Click it (or Tab to it and press Enter) for a panel with:
 
 - the total split into **Claude sessions** and **This app**;
-- how many sessions are [suspended](suspend), when any are; they use no memory until you open them;
+- the sessions that are [suspended](suspend), when any are, by name and in every profile; they use no memory until you open them;
 - the five largest workspaces, each with its split into Claude and other, for example `Claude 300 MB, other 1.2 GB: node dev server`;
 - one line on each term, and what isn't counted;
 - **Learn more**, which opens this page.

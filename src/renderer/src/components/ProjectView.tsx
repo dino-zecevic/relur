@@ -9,7 +9,7 @@ import { projectWorktreeDir } from '@shared/projects';
 import type { Profile, Project } from '@shared/schemas';
 import { matchShortcut } from '@shared/shortcuts';
 import { backgroundNote, GLYPH_LABEL, glyphFor } from '@shared/status';
-import { SUSPENDED_TOOLTIP, suspendedNote } from '@shared/suspend';
+import { SUSPENDED_TOOLTIP, suspendClockNote, suspendedNote } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import type { OtherWorktree, Workspace } from '@shared/workspaces';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -435,6 +435,16 @@ function WorkspaceTable({
 }) {
   const launching = useLaunching();
   const suspended = useSuspended();
+  // Why a running Claude isn't suspended, or when it will be (spec §9.8): the
+  // Status cell's tooltip, read again as often as the app checks.
+  const trpc = useTRPC();
+  const clocks = useQuery(
+    trpc.sessions.suspendClocks.queryOptions(undefined, { refetchInterval: 15_000 }),
+  );
+  const clockNote = (workspaceId: string) => {
+    const clock = clocks.data?.find((c) => c.workspaceId === workspaceId);
+    return clock ? (suspendClockNote(clock, Date.now()) ?? undefined) : undefined;
+  };
   // The Memory column sorts (spec §6.14): largest first, smallest first, then as listed.
   // Workspaces without a running session stay last.
   const [sort, setSort] = useState<MemorySort>('none');
@@ -539,7 +549,11 @@ function WorkspaceTable({
               onClick={() => onOpen(w)}
               className="cursor-default border-b border-line hover:bg-raised focus-visible:bg-raised focus-visible:-outline-offset-2"
             >
-              <td className={cell}>
+              <td
+                className={cell}
+                data-suspend-note={clockNote(w.id)}
+                title={suspended.has(w.id) ? undefined : clockNote(w.id)}
+              >
                 <span
                   className={`flex items-center gap-2 ${STATE_TEXT[w.state] ?? 'text-fg-muted'}`}
                 >

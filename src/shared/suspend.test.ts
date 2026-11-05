@@ -4,6 +4,7 @@ import {
   draftAfter,
   type SuspendFacts,
   suspendBlocker,
+  suspendClockNote,
   suspendDue,
   suspendedNote,
   typesText,
@@ -89,8 +90,41 @@ describe('typesText', () => {
     ['\x1b[Z'],
     ['\x1bb'],
     ['\x1b[200~\x1b[201~'],
+    // Mouse reports: Claude Code turns on SGR (1006) and any-motion (1003) tracking.
+    ['\x1b[<35;10;5M'],
+    ['\x1b[<0;10;5M\x1b[<0;10;5m'],
+    ['\x1b[<64;1;1M'],
+    ['\x1b[M #!'],
+    // Focus reports and the terminal's answers to queries.
+    ['\x1b[I\x1b[O'],
+    ['\x1b[?1;2c'],
+    ['\x1b]11;rgb:0000/0000/0000\x1b\\'],
+    ['\x1b]10;rgb:ffff/ffff/ffff\x07'],
+    ['\x1bP>|xterm.js(6.0.0)\x1b\\'],
   ])('ignores %j', (data) => {
     expect(typesText(data)).toBe(false);
+  });
+});
+
+describe('suspendClockNote', () => {
+  const clock = { workspaceId: 'w', blocker: null, dueAt: null } as const;
+  it('says why a session is kept running', () => {
+    expect(suspendClockNote({ ...clock, blocker: 'draft' }, 0)).toBe(
+      'Not suspended: a draft in the prompt',
+    );
+    expect(suspendClockNote({ ...clock, blocker: 'kept' }, 0)).toBe(
+      'Not suspended: Keep Claude Running is on',
+    );
+  });
+
+  it('says when a running clock ends, and nothing while suspension is off', () => {
+    expect(suspendClockNote({ ...clock, dueAt: 150_000 }, 0)).toBe(
+      'Suspended in 3 min if it stays idle',
+    );
+    expect(suspendClockNote({ ...clock, dueAt: 1000 }, 5000)).toBe(
+      'Suspended in 1 min if it stays idle',
+    );
+    expect(suspendClockNote({ ...clock, blocker: 'off' }, 0)).toBeNull();
   });
 });
 
@@ -109,6 +143,12 @@ describe('draftAfter', () => {
     // A command such as /model sends no prompt hook, but ↵ sent it.
     expect(draftAfter(false, '/model sonnet\r')).toBe(false);
     expect(draftAfter(false, 'one\rtwo')).toBe(true);
+  });
+
+  it('ignores the mouse moving over the terminal', () => {
+    expect(draftAfter(false, '\x1b[<35;40;12M')).toBe(false);
+    expect(draftAfter(true, '\x1b[<35;40;12M')).toBe(true);
+    expect(draftAfter(false, '\x1b[<35;40;12Mx')).toBe(true);
   });
 
   it('keeps it through ⇧↵ and pasted line breaks', () => {

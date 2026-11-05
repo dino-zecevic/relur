@@ -43,6 +43,7 @@ import type { SetupService } from '../setup/service';
 import type { SkillService } from '../skills/service';
 import type { ElectronStatusPlatform } from '../status/electron';
 import type { Alert, ConversationEvent, StatusService } from '../status/service';
+import type { SuspendService } from '../suspend/service';
 import type { UnfinishedService } from '../unfinished/service';
 import type { UpdateAction } from '../updates/install';
 import type { UpdateService } from '../updates/service';
@@ -76,6 +77,8 @@ export interface Services {
   usage: UsageRecords;
   /** Memory used by Claude sessions and the app (spec §6.14). */
   memory: MemoryMonitor;
+  /** Suspending idle sessions (spec §9.8). */
+  suspend: SuspendService;
   /** Menu items the renderer answers with a dialog. */
   menuRequests: EventEmitter;
   /** Report a Bug… and Request a Feature… (spec §6.12), also from the Guide. */
@@ -118,6 +121,7 @@ export function createAppRouter({
   statusPlatform,
   usage,
   memory,
+  suspend,
   menuRequests,
   feedback,
   helper,
@@ -1047,6 +1051,8 @@ export function createAppRouter({
       startClaudeInProject: publicProcedure
         .input(projectId)
         .mutation(({ input }) => terminals.startClaudeInProject(input.projectId)),
+      /** Each running workspace Claude's idle clock: why not suspended, or when (spec §9.8). */
+      suspendClocks: publicProcedure.query(() => suspend.clocks()),
       /** The projects whose main-checkout Claude is kept running (spec §9.8). */
       keptMainCheckouts: publicProcedure.query(() => workspaceRecords.keptMainCheckouts()),
       setMainCheckoutKept: publicProcedure

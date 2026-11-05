@@ -77,16 +77,24 @@ export function suspendDue(
   return now - eligibleSince >= delayMin * minuteMs;
 }
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: escape sequences start with ESC.
-const SEQUENCES = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1bO.|\x1b./gs;
+/**
+ * Escape sequences a terminal view sends: strings (OSC, DCS, APC, PM, SOS: the
+ * terminal's answers to queries), X10 mouse reports (ESC [ M and three bytes),
+ * CSI with any parameter bytes (SGR mouse reports `ESC [ < 35 ; 10 ; 5 M`,
+ * focus `ESC [ I`, arrows), SS3 keys and Alt+key.
+ */
+const SEQUENCES =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: escape sequences start with ESC.
+  /\x1b[\]P_^X][\s\S]*?(?:\x07|\x1b\\)|\x1b\[M[\s\S]{3}|\x1b\[[0-?]*[ -/]*[@-~]|\x1bO.|\x1b./g;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control keys aren't text.
 const TEXT = /[^\x00-\x1f\x7f]/;
 
 /**
  * Whether keys from a terminal view type text into Claude's prompt (a draft,
  * spec §9.8): printable characters, pasted text included. Escape sequences
- * (arrow keys, the paste markers, Alt+key, Esc), Enter, Backspace and other
- * control keys (⌃C) aren't.
+ * (arrow keys, the paste markers, Alt+key, Esc, mouse reports and the
+ * terminal's answers to queries), Enter, Backspace and other control keys
+ * (⌃C) aren't.
  */
 export function typesText(data: string): boolean {
   return TEXT.test(data.replace(SEQUENCES, ''));
@@ -109,6 +117,39 @@ export function draftAfter(draft: boolean, data: string): boolean {
   const sent = keys.lastIndexOf('\r');
   if (sent >= 0) return typesText(keys.slice(sent + 1));
   return draft || typesText(keys);
+}
+
+/** Why a running Claude isn't suspended, for app.log and the Workspaces table (spec §9.8). */
+export const BLOCKER_TEXT: Record<SuspendBlocker, string> = {
+  off: 'suspension is off',
+  resuming: 'resuming',
+  kept: 'Keep Claude Running is on',
+  shown: 'shown in a window',
+  busy: "Claude isn't idle",
+  background: 'background work running',
+  draft: 'a draft in the prompt',
+};
+
+/** What a running Claude's idle clock says now (spec §9.8). */
+export interface SuspendClock {
+  workspaceId: string;
+  /** Why it isn't suspended; null while its clock runs. */
+  blocker: SuspendBlocker | null;
+  /** When it will be suspended (ms since the epoch) while its clock runs. */
+  dueAt: number | null;
+}
+
+/**
+ * The Workspaces table's tooltip on a running Claude's state (spec §9.8):
+ * "Not suspended: a draft in the prompt", or "Suspended in 3 min if it stays
+ * idle"; nothing while suspension is off.
+ */
+export function suspendClockNote(clock: SuspendClock, now: number): string | null {
+  if (clock.blocker === 'off') return null;
+  if (clock.blocker) return `Not suspended: ${BLOCKER_TEXT[clock.blocker]}`;
+  if (clock.dueAt === null) return null;
+  const min = Math.max(1, Math.ceil((clock.dueAt - now) / 60_000));
+  return `Suspended in ${min} min if it stays idle`;
 }
 
 /** "2 sessions suspended", for the memory tooltip and the project view (spec §6.14). */

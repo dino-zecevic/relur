@@ -1,7 +1,10 @@
 import type { WorkspaceState } from '@shared/status';
 import {
+  BLOCKER_TEXT,
   draftAfter,
   RESUME_READY_MS,
+  type SuspendBlocker,
+  type SuspendClock,
   type SuspendFacts,
   suspendBlocker,
   suspendDue,
@@ -49,6 +52,10 @@ export interface SuspendDeps {
   resume(info: SessionInfo): Promise<unknown>;
   /** A main-checkout Claude's conversation id, from its hooks (after /clear). */
   followMainClaude(sessionId: string, claudeId: string): void;
+  /** How app.log names a session: its workspace, or "<project> (main checkout)". */
+  label?(info: SessionInfo): string;
+  /** app.log (spec §3.4): the idle clocks, suspends and resumes. */
+  log?: { write(line: string): void } | null;
   /** Length of a minute; shorter in the e2e tests. */
   minuteMs?: number;
   readyMs?: number;
@@ -68,6 +75,8 @@ interface Facts {
   model: string | null;
   /** Since when it may be suspended; null while it may not. */
   eligibleSince: number | null;
+  /** What the last check found, for app.log; undefined before the first. */
+  blocker?: SuspendBlocker | null;
   /** A main checkout's Claude: its state, kept here only (spec §9.8). */
   main: { state: WorkspaceState; background: number; waiting: boolean } | null;
 }
@@ -119,6 +128,7 @@ export class SuspendService {
         facts.started = false;
         facts.draft = false;
         facts.eligibleSince = null;
+        facts.blocker = undefined;
         // Ready at SessionStart, or after 20 s without one.
         this.readyTimers.set(
           info.id,
@@ -193,7 +203,9 @@ export class SuspendService {
       if (info.kind !== 'claude' || info.status !== 'running') continue;
       const facts = this.facts.get(info.id);
       const current = facts && this.suspendFacts(info, facts, shown);
-      if (!facts || !current || suspendBlocker(current) !== null) {
+      const blocker = current ? suspendBlocker(current) : null;
+      if (facts && current) this.noteBlocker(info, facts, blocker, current.delayMin);
+      if (!facts || !current || blocker !== null) {
         if (facts) facts.eligibleSince = null;
         continue;
       }
@@ -203,11 +215,36 @@ export class SuspendService {
         suspendDue(facts.eligibleSince, now, current.delayMin, this.minuteMs)
       ) {
         facts.eligibleSince = null;
+        facts.blocker = undefined;
+        this.note(info, `suspended after ${current.delayMin} min idle`);
         void this.deps.host.suspend(info.id).catch((error: unknown) => {
           console.error('suspending a Claude session failed', error);
+          this.note(info, `suspending failed: ${error instanceof Error ? error.message : error}`);
         });
       }
     }
+  }
+
+  /**
+   * Each running workspace Claude's idle clock now (spec §9.8): why it isn't
+   * suspended, or when it will be. For the Workspaces table's tooltip.
+   */
+  clocks(): SuspendClock[] {
+    const shown = this.deps.shown();
+    const clocks: SuspendClock[] = [];
+    for (const info of this.deps.host.list()) {
+      if (info.kind !== 'claude' || info.status !== 'running' || !info.workspaceId) continue;
+      const facts = this.facts.get(info.id);
+      const current = facts && this.suspendFacts(info, facts, shown);
+      if (!facts || !current) continue;
+      const blocker = suspendBlocker(current);
+      const dueAt =
+        blocker === null && current.delayMin !== null
+          ? (facts.eligibleSince ?? this.now()) + current.delayMin * this.minuteMs
+          : null;
+      clocks.push({ workspaceId: info.workspaceId, blocker, dueAt });
+    }
+    return clocks;
   }
 
   /** Resumes every suspended session that a window shows now (spec §9.8). */
@@ -218,7 +255,7 @@ export class SuspendService {
       const isShown = info.workspaceId
         ? shown.workspaces.has(info.workspaceId)
         : shown.sessions.has(info.id);
-      if (isShown) void this.resume(info);
+      if (isShown) void this.resume(info, 'shown in a window');
     }
   }
 
@@ -233,17 +270,18 @@ export class SuspendService {
     const waiting = new Promise<void>((resolve) => {
       this.waiters.set(info.id, [...(this.waiters.get(info.id) ?? []), resolve]);
     });
-    await this.resume(info);
+    await this.resume(info, 'the app types into it');
     const now = this.deps.host.has(info.id) ? this.deps.host.get(info.id) : null;
     if (now?.status !== 'running') this.release(info.id);
     await waiting;
   }
 
   /** Starts a suspended session's Claude again, once per resume. */
-  private resume(info: SessionInfo): Promise<void> {
+  private resume(info: SessionInfo, why: string): Promise<void> {
     let running = this.resuming.get(info.id);
     if (running) return running;
     if (info.status !== 'suspended') return Promise.resolve();
+    this.note(info, `resumed: ${why}`);
     running = this.deps
       .resume(info)
       .then(() => undefined)
@@ -251,11 +289,38 @@ export class SuspendService {
         // It can't start (setup, a missing project): it has exited, and the
         // view offers to start it with the reason (spec §9.8).
         console.error('resuming a Claude session failed', error);
+        this.note(info, `resume failed: ${error instanceof Error ? error.message : error}`);
         this.deps.host.endSuspended(info.id);
       })
       .finally(() => this.resuming.delete(info.id));
     this.resuming.set(info.id, running);
     return running;
+  }
+
+  /**
+   * app.log (spec §3.4, §9.8): the clock starting, starting again with the
+   * reason, and what keeps a session running when that changes. Nothing while
+   * suspension is off.
+   */
+  private noteBlocker(
+    info: SessionInfo,
+    facts: Facts,
+    blocker: SuspendBlocker | null,
+    delayMin: number | null,
+  ): void {
+    const before = facts.blocker;
+    facts.blocker = blocker;
+    if (before === blocker || (blocker === 'off' && (before === undefined || before === 'off'))) {
+      return;
+    }
+    if (blocker === null) this.note(info, `eligible: suspended after ${delayMin} min idle`);
+    else if (before === null) this.note(info, `clock reset: ${BLOCKER_TEXT[blocker]}`);
+    else this.note(info, `not suspended: ${BLOCKER_TEXT[blocker]}`);
+  }
+
+  private note(info: SessionInfo, text: string): void {
+    const label = this.deps.label?.(info) ?? info.title;
+    this.deps.log?.write(`suspend ${label}: ${text}`);
   }
 
   private markReady(id: string, settleMs: number): void {

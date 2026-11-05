@@ -539,15 +539,17 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       onSessionStart: (listener) => status?.onSessionStart(listener) ?? (() => {}),
     });
     unfinished = continuing;
+    // A Claude session's name: its workspace's task id or name, or its main checkout.
+    const sessionLabel = (info: SessionInfo) => {
+      const workspace = info.workspaceId ? workspaceRecords.get(info.workspaceId) : null;
+      if (workspace) return workspace.task.id ?? workspace.name;
+      const project = config.get().config?.projects.find((p) => p.id === info.projectId);
+      return project ? `${project.name} (main checkout)` : info.title;
+    };
     // Memory used by Claude sessions (spec §6.14).
     const monitor = new MemoryMonitor({
       sessions: () => host.processes('claude'),
-      label: (info) => {
-        const workspace = info.workspaceId ? workspaceRecords.get(info.workspaceId) : null;
-        if (workspace) return workspace.task.id ?? workspace.name;
-        const project = config.get().config?.projects.find((p) => p.id === info.projectId);
-        return project ? `${project.name} (main checkout)` : info.title;
-      },
+      label: sessionLabel,
       readProcesses: () => readProcessTable(),
       appProcesses: () =>
         app
@@ -582,6 +584,12 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
           ? workspaces.startClaude(info.workspaceId)
           : terminals.resumeClaudeInProject(info.id, suspend.restoreArgs(info.id)),
       followMainClaude: (sessionId, claudeId) => terminals.followMainClaude(sessionId, claudeId),
+      // app.log (spec §3.4): "suspend Alpha (Personal): clock reset: a draft in the prompt".
+      label: (info) => {
+        const profile = config.get().config?.profiles.find((p) => p.id === info.profileId);
+        return `${sessionLabel(info)} (${profile?.name ?? info.profileId})`;
+      },
+      log: appLog,
       ...(minuteOverride > 0 ? { minuteMs: minuteOverride } : {}),
     });
     suspender = suspend;
@@ -666,6 +674,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       helper,
       usage,
       memory: monitor,
+      suspend,
       status,
       statusPlatform,
       setup,

@@ -11,7 +11,7 @@ The Overview shows the profile's workspaces in four sections, and only those tha
 - **Ready to ship:** Done workspaces with something left to [finish](finishing-work). **Commit…** opens the workspace with the Changes panel and its commit message in focus; **Push** pushes the branch (in a workspace with [linked repositories](tasks-across-repositories) it opens the Changes panel, where you push each one); **View PR** opens the pull request in your browser.
 - **Clean up:** workspaces whose pull request is merged. **Delete** on a row opens [Delete workspace](delete-workspace); **Delete n merged workspaces** opens one dialog with all of them, each with what deleting it would lose, and deletes them together.
 
-A workspace shows in one section only. Each section shows five rows at most; **Show all** shows the rest.
+A workspace shows in one section only. Each section shows five rows at most; **Show all** shows the rest. A workspace whose Claude is [suspended](suspend) to save memory shows **Suspended** on its row.
 
 Next to the sections, **At a glance** lists the profile's projects with how many workspaces each has (and how many other projects' workspaces it is linked into); click one to open it. **Quick actions** has **New workspace**, **Add project** and the Guide. In a narrow window both move below the sections.
 

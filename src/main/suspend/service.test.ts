@@ -76,6 +76,7 @@ let shown: { workspaces: Set<string>; sessions: Set<string> };
 let kept: string[];
 let resumes: string[];
 let follows: [string, string][];
+let logged: string[];
 
 const hook = (event: string, more: Partial<HookMessage> = {}, payload: object = {}) =>
   service.handleHook({ event, workspaceId: null, profileId: 'work', payload, ...more });
@@ -98,6 +99,7 @@ beforeEach(() => {
   kept = [];
   resumes = [];
   follows = [];
+  logged = [];
   service = new SuspendService({
     host: host as never,
     delayMin: () => delay,
@@ -109,6 +111,8 @@ beforeEach(() => {
       host.resumed(info.id);
     },
     followMainClaude: (sessionId, claudeId) => follows.push([sessionId, claudeId]),
+    label: (info) => info.id,
+    log: { write: (line) => logged.push(line) },
     minuteMs: MINUTE,
     readyMs: 20_000,
     settleMs: 2000,
@@ -166,6 +170,72 @@ describe('SuspendService (spec §9.8)', () => {
     states.ws_off = workspace('done');
     pass(60 * MINUTE);
     expect(host.suspended).toEqual([]);
+  });
+
+  it('logs the clock: eligible, reset with the reason, suspended, resumed (spec §3.4)', async () => {
+    host.add('a');
+    states.ws_a = workspace('done');
+    service.check();
+    pass(MINUTE);
+    host.type('a', 'half a prompt');
+    pass(1);
+    pass(1);
+    host.type('a', '\r');
+    pass(1);
+    shown.workspaces.add('ws_a');
+    pass(1);
+    shown.workspaces.delete('ws_a');
+    pass(1);
+    pass(5 * MINUTE);
+    expect(logged).toEqual([
+      'suspend a: eligible: suspended after 5 min idle',
+      'suspend a: clock reset: a draft in the prompt',
+      'suspend a: eligible: suspended after 5 min idle',
+      'suspend a: clock reset: shown in a window',
+      'suspend a: eligible: suspended after 5 min idle',
+      'suspend a: suspended after 5 min idle',
+    ]);
+    shown.workspaces.add('ws_a');
+    service.checkShown();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(logged.at(-1)).toBe('suspend a: resumed: shown in a window');
+  });
+
+  it('logs what keeps a session running when it changes, nothing while off', () => {
+    host.add('a');
+    states.ws_a = workspace('working');
+    service.check();
+    states.ws_a = workspace('done', 1);
+    pass(1);
+    pass(1);
+    states.ws_a = workspace('done', 0, true);
+    pass(1);
+    host.add('b');
+    states.ws_b = workspace('done');
+    delay = null;
+    pass(1);
+    expect(logged).toEqual([
+      "suspend a: not suspended: Claude isn't idle",
+      'suspend a: not suspended: background work running',
+      'suspend a: not suspended: Keep Claude Running is on',
+      'suspend a: not suspended: suspension is off',
+    ]);
+  });
+
+  it("gives each running workspace Claude's clock: why not, or when", () => {
+    host.add('a');
+    states.ws_a = workspace('done');
+    host.add('b');
+    states.ws_b = workspace('done');
+    host.type('b', 'x');
+    host.add('main', { workspaceId: null });
+    service.check();
+    pass(2 * MINUTE);
+    const start = Date.now() - 2 * MINUTE;
+    expect(service.clocks()).toEqual([
+      { workspaceId: 'ws_a', blocker: null, dueAt: start + 5 * MINUTE },
+      { workspaceId: 'ws_b', blocker: 'draft', dueAt: null },
+    ]);
   });
 
   it('counts a Claude waiting after SessionStart as idle, not one still starting', () => {

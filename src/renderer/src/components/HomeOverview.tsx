@@ -15,6 +15,7 @@ import {
 import { describeSplit, formatBytes, type MemorySnapshot, workspaceMemory } from '@shared/memory';
 import type { Profile, Project } from '@shared/schemas';
 import { backgroundNote, type StatusGlyph as Glyph } from '@shared/status';
+import { SUSPENDED_TOOLTIP } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import {
   canContinue,
@@ -29,6 +30,7 @@ import { trpcClient, useTRPC } from '../trpc';
 import { Kbd, keyHint } from '../ui/controls';
 import { useLaunching } from '../ui/launching';
 import { StatusGlyph } from '../ui/StatusGlyph';
+import { useSuspended } from '../ui/suspended';
 import { GateAnswer } from './WorkflowViews';
 
 /** What Home's rows and quick actions do; the app opens views and dialogs. */
@@ -136,6 +138,7 @@ export function HomeOverview({
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const launching = useLaunching();
+  const suspended = useSuspended();
 
   // What Done workspaces have left to ship, summed over their repositories.
   const candidates = shipCandidates(workspaces);
@@ -458,6 +461,16 @@ export function HomeOverview({
             </span>
           ) : null}
         </div>
+        {/* Suspended to save memory (spec §9.8), quiet as in the sidebar. */}
+        {suspended.has(w.id) ? (
+          <span
+            data-suspended
+            title={SUSPENDED_TOOLTIP}
+            className="flex-none text-xs text-fg-subtle"
+          >
+            Suspended
+          </span>
+        ) : null}
         {meta ? (
           <span
             data-home-memory

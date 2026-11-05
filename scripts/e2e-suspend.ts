@@ -3,9 +3,12 @@
  * `claude` and a one-second minute: the setting in Edit profile; an idle
  * workspace suspended after the delay (Claude and a process it started gone),
  * never one that is shown, working, has a background command or a draft, or
- * is kept running; resuming on open (`--resume` with the session id,
- * "Resuming…", keys blocked, then typed); a main checkout's Claude; and the
- * start, where only the opened and the continued workspaces resume.
+ * is kept running, while the mouse over its terminal is no draft; why each
+ * isn't (the Workspaces table's tooltip), the suspended ones by name in the
+ * memory panel, and app.log; resuming on open (`--resume` with the session
+ * id, "Resuming…", keys blocked, then typed); Esc on the memory panel over a
+ * Claude terminal; a main checkout's Claude; and the start, where only the
+ * opened and the continued workspaces resume, with the mark on Home.
  *
  *   tsx scripts/e2e-suspend.ts [--dev] [extra Electron args…]
  */
@@ -26,7 +29,10 @@ import {
   dialogText,
   launchApp,
   openContextMenu,
+  pressKey,
+  ptyRecords,
   type RunningApp,
+  recordPtys,
   sleep,
   submitDialog,
   typeInField,
@@ -72,9 +78,10 @@ async function main() {
     const api = fx.localRepo('api');
     fs.writeFileSync(path.join(fx.root, '.zshrc'), '');
     // A stand-in for Claude: passes the setup check, records how it was
-    // started, its pid and a child it starts, runs SessionStart (after 3 s
-    // while `slow-start` exists), turns `prompt`, `done` and `background` into
-    // their hooks and records every other line typed into it.
+    // started, its folder, its pid and a child it starts, runs SessionStart
+    // (after 3 s while `slow-start` exists), turns on mouse tracking as Claude
+    // Code does (any motion, SGR reports), turns `prompt`, `done` and
+    // `background` into their hooks and records every other line typed into it.
     const fakeClaude = path.join(fx.root, 'bin', 'fake-claude');
     fs.mkdirSync(path.dirname(fakeClaude));
     fs.writeFileSync(
@@ -95,11 +102,13 @@ helper=""
 hook() { [ -n "$helper" ] && printf '%s' "$2" | "$helper" hook "$1" > /dev/null; }
 name=$(basename "$PWD")
 echo "$*" >> "$HOME/starts-$name.txt"
+echo "$PWD" > "$HOME/cwd-$name.txt"
 echo $$ > "$HOME/pid-$name.txt"
 sleep 600 &
 echo $! > "$HOME/child-$name.txt"
 [ -e "$HOME/slow-start" ] && sleep 3
 hook SessionStart "{\\"session_id\\":\\"$sid\\"}"
+printf '\\033[?1003h\\033[?1006h'
 echo "fake claude in $name"
 while IFS= read -r line; do
   case "$line" in
@@ -143,6 +152,31 @@ done
     /** The id the first start chose (`--session-id`, spec §9.4). */
     const sessionIdOf = (name: string) => starts(name)[0]?.match(/--session-id (\S+)/)?.[1] ?? '';
 
+    const appLog = () => {
+      const log = path.join(path.dirname(configFile), 'app.log');
+      return fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
+    };
+    /** The Status cell's tooltip in the Workspaces table (spec §9.8). */
+    const suspendNote = (name: string) =>
+      page.eval<string | null>(
+        `document.querySelector('[data-workspace-row="${ids[name]}"] [data-suspend-note]')?.dataset.suspendNote ?? null`,
+      );
+    /** A real click: the pointer moves there, presses and releases. */
+    const click = async (page: Cdp, selector: string) => {
+      const at = await page.eval<{ x: number; y: number }>(`(() => {
+        const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`);
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) {
+        await page.send('Input.dispatchMouseEvent', {
+          type,
+          ...at,
+          button: type === 'mouseMoved' ? 'none' : 'left',
+          buttons: type === 'mousePressed' ? 1 : 0,
+          clickCount: 1,
+        });
+      }
+    };
     const uncaughtLog = file('uncaught.log');
     const launch = async () => {
       app = await launchApp({
@@ -191,6 +225,7 @@ done
     // 1. Workspaces with Claude in each, suspension still off.
     let running = await launch();
     let { page } = running;
+    await recordPtys(running.main);
     for (const [task, branch] of [
       ['Alpha', 'alpha'],
       ['Bravo', 'bravo'],
@@ -208,6 +243,23 @@ done
     await waitState(page, 'Alpha', 'Working');
     await typeInTerminal(page, 'done');
     await waitState(page, 'Alpha', 'Done');
+    // The mouse moves over its terminal: Claude gets the reports, which are no draft.
+    const terminalBox = await page.eval<{ x: number; y: number; width: number; height: number }>(
+      `(() => { const r = [...document.querySelectorAll('[data-terminal][data-connected]')].find((t) => t.offsetParent).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+    );
+    for (let i = 1; i <= 5; i++) {
+      await page.send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: terminalBox.x + (terminalBox.width * i) / 6,
+        y: terminalBox.y + (terminalBox.height * i) / 6,
+      });
+    }
+    const alphaInput = async () =>
+      (await ptyRecords(running.main)).find((r) => path.basename(r.cwd) === 'alpha')?.input ?? '';
+    for (const end = Date.now() + 5000; !(await alphaInput()).includes('\x1b[<35;'); ) {
+      if (Date.now() > end) throw new Error('the mouse reports never reached Alpha');
+      await sleep(100);
+    }
     await open(page, 'Bravo');
     await typeInTerminal(page, 'prompt');
     await waitState(page, 'Bravo', 'Working');
@@ -266,12 +318,51 @@ done
       `!!document.querySelector('[data-workspace-row="${ids.Alpha}"] [data-suspended]')`,
       'Suspended in the Workspaces table',
     );
+    // Its Status tooltip says why each running one isn't suspended, or when it will be.
+    await page.waitFor(
+      `!!document.querySelector('[data-workspace-row="${ids.Golf}"] [data-suspend-note]')`,
+      'the tooltips',
+    );
+    assert.equal(await suspendNote('Golf'), 'Not suspended: a draft in the prompt');
+    assert.equal(await suspendNote('Charlie'), 'Not suspended: background work running');
+    assert.equal(await suspendNote('Delta'), 'Not suspended: Keep Claude Running is on');
+    assert.equal(await suspendNote('Bravo'), "Not suspended: Claude isn't idle");
+    // Echo's clock runs once the window no longer shows it (read again every 15 s).
+    await page.waitFor(
+      `/^Suspended in \\d+ min if it stays idle$/.test(document.querySelector('[data-workspace-row="${ids.Echo}"] [data-suspend-note]')?.dataset.suspendNote)`,
+      "Echo's clock",
+      20_000,
+    );
+    assert.equal(await suspendNote('Alpha'), null, 'none on a suspended one');
+    assert.equal(
+      await page.eval(`document.querySelector('[data-workspace-row="${ids.Golf}"] td').title`),
+      'Not suspended: a draft in the prompt',
+    );
     await page.waitFor(`!!document.querySelector('button[data-memory]')`, 'Memory', 20_000);
     await page.eval(`document.querySelector('button[data-memory]').click()`);
     await page.waitFor(
       `document.querySelector('[data-memory-panel] [data-memory-suspended]')?.textContent.startsWith('1 session suspended to save memory')`,
       'the memory panel',
     );
+    // By name, with its project.
+    assert.deepEqual(
+      await page.eval<string[]>(
+        `[...document.querySelectorAll('[data-memory-suspended-list] li')].map((li) => li.innerText.replace(/\\s+/g, ' '))`,
+      ),
+      ['Alpha api'],
+    );
+    // app.log: the clock, its resets with the reason, and the suspend.
+    const log = appLog();
+    for (const line of [
+      'suspend Alpha (Work): eligible: suspended after 5 min idle',
+      'suspend Alpha (Work): suspended after 5 min idle',
+      'suspend Golf (Work): not suspended: a draft in the prompt',
+      'suspend Charlie (Work): not suspended: background work running',
+      'suspend Delta (Work): not suspended: Keep Claude Running is on',
+      'suspend Echo (Work): not suspended: shown in a window',
+    ]) {
+      assert.ok(log.includes(` ${line}\n`), `app.log has "${line}":\n${log}`);
+    }
     await page.eval(`document.querySelector('button[data-memory]').click()`);
     await page.waitFor(`!document.querySelector('[data-memory-panel]')`, 'the panel to close');
 
@@ -306,6 +397,42 @@ done
     await until(() => read('input-alpha.txt').includes('late'), 'the late keys');
     assert.ok(!read('input-alpha.txt').includes('early'), 'the early keys went nowhere');
     assert.equal(await page.eval(suspendedRow('Alpha')), false);
+    assert.ok(appLog().includes(' suspend Alpha (Work): resumed: shown in a window\n'));
+
+    // The memory panel over Alpha's Claude terminal (spec §6.14): a click
+    // opens it in focus, Esc closes it, focus goes back to the button, and
+    // the Esc never reaches Claude.
+    const memoryPanel = `document.querySelector('[data-memory-panel]')`;
+    const memoryButton = `document.querySelector('footer [data-memory]')`;
+    await typeInTerminal(page, 'before', false);
+    await click(page, 'footer [data-memory]');
+    await page.waitFor(
+      `!!${memoryPanel} && document.activeElement === ${memoryPanel}`,
+      'the memory panel in focus over the terminal',
+    );
+    await sleep(500);
+    assert.equal(await page.eval(`document.activeElement === ${memoryPanel}`), true);
+    await pressKey(page, 'Escape');
+    await page.waitFor(
+      `!${memoryPanel} && document.activeElement === ${memoryButton}`,
+      'Esc to close the panel over the terminal',
+    );
+    // With the terminal in focus while it is open, Esc still closes it.
+    await click(page, 'footer [data-memory]');
+    await page.waitFor(`!!${memoryPanel}`, 'the panel again');
+    await page.eval(
+      `[...document.querySelectorAll('[data-terminal][data-connected]')].find((t) => t.offsetParent).querySelector('.xterm-helper-textarea').focus()`,
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(
+      `!${memoryPanel} && document.activeElement === ${memoryButton}`,
+      'Esc with the terminal in focus',
+    );
+    await typeInTerminal(page, '-after');
+    await until(
+      () => read('input-alpha.txt').split('\n').includes('before-after'),
+      'the line typed around the panel, without an Esc in it',
+    );
 
     // 5. A main checkout's Claude: started with hooks and its own session id,
     // suspended while its tab isn't shown, resumed when it is.
@@ -325,8 +452,10 @@ done
     await until(() => starts('api').length === 2, "the main checkout's Claude resumed");
     assert.ok(starts('api')[1]?.includes(`--resume ${sessionIdOf('api')}`), starts('api')[1]);
 
-    // 6. Quit with Bravo working (continued at start), Alpha and Echo idle,
-    // Charlie with a background command, Delta suspended.
+    // 6. Quit with Bravo working (continued at start), Alpha and Echo idle
+    // (Alpha with a file not committed), Charlie with a background command,
+    // Delta suspended.
+    fs.writeFileSync(path.join(read('cwd-alpha.txt').trim(), 'notes.txt'), 'draft\n');
     await open(page, 'Echo');
     await running.main.eval(
       process.platform === 'darwin'
@@ -363,6 +492,18 @@ done
     for (const branch of ['alpha', 'charlie', 'delta', 'echo', 'golf'] as const) {
       assert.equal(starts(branch).length, before[branch], `${branch} starts suspended`);
     }
+    // Home's rows show the mark too: Alpha is Ready to ship, suspended.
+    await page.waitFor(
+      `!!document.querySelector('[data-home-row="${ids.Alpha}"] [data-suspended]')`,
+      'Suspended on Home',
+      20_000,
+    );
+    assert.equal(
+      await page.eval(
+        `document.querySelector('[data-home-row="${ids.Alpha}"] [data-suspended]').title`,
+      ),
+      SUSPENDED_TOOLTIP,
+    );
     await expandApi(page);
     await page.waitFor(suspendedRow('Charlie'), 'Charlie marked suspended');
     // Opening one resumes it.

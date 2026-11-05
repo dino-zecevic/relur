@@ -40,7 +40,7 @@ import { button, iconButton, isMac, Kbd } from './ui/controls';
 import { requestOnOpen } from './ui/open-requests';
 import { useProjectDisclosure } from './ui/project-disclosure';
 import { playAlert } from './ui/sounds';
-import { SessionMarks } from './ui/suspended';
+import { SessionMarks, type SuspendedSession } from './ui/suspended';
 import { useNativeTheme } from './ui/theme';
 import {
   type AfterSetup,
@@ -181,7 +181,10 @@ export function App() {
   );
   useSubscription(
     trpc.sessions.changes.subscriptionOptions(undefined, {
-      onData: () => void queryClient.invalidateQueries({ queryKey: trpc.sessions.list.queryKey() }),
+      onData: () => {
+        void queryClient.invalidateQueries({ queryKey: trpc.sessions.list.queryKey() });
+        void queryClient.invalidateQueries({ queryKey: trpc.sessions.suspendClocks.queryKey() });
+      },
     }),
   );
   // Alert sounds per profile and event, silenced by Do Not Disturb (spec §10.3).
@@ -418,6 +421,19 @@ export function App() {
       s.kind === 'claude' && s.launching && s.workspaceId ? [s.workspaceId] : [],
     ),
   );
+  // Suspended sessions by name, in every profile, for the memory panel (spec §6.14):
+  // a workspace's title with its project, or "<project> (main checkout)", and
+  // the profile when it isn't the shown one.
+  const suspendedSessions: SuspendedSession[] = (sessions.data ?? []).flatMap((s) => {
+    if (s.kind !== 'claude' || s.status !== 'suspended') return [];
+    const w = s.workspaceId ? workspaces.data?.find((x) => x.id === s.workspaceId) : undefined;
+    const project = currentConfig?.projects.find((p) => p.id === s.projectId);
+    const name = w ? w.task.title || w.name : project ? `${project.name} (main checkout)` : s.title;
+    const other =
+      s.profileId !== profileId ? profiles.find((p) => p.id === s.profileId)?.name : undefined;
+    const where = [w ? project?.name : undefined, other].filter(Boolean).join(' · ');
+    return [{ id: s.id, name, where }];
+  });
   // Workspaces whose Claude is suspended show the mark (spec §9.8).
   const suspended = new Set(
     (sessions.data ?? []).flatMap((s) =>
@@ -447,7 +463,13 @@ export function App() {
   const claudeTabShown = Boolean(workspace && shownSession?.kind === 'claude');
   // A main checkout's Claude tab, shown in a project view, isn't suspended (spec §9.8).
   const shownSessionId = !workspace && projectTab === shownSession?.id ? shownSession.id : null;
-  const setVisible = useMutation(trpc.status.setVisible.mutationOptions());
+  // What is shown changes the idle clocks (spec §9.8): the table's tooltips read them again.
+  const setVisible = useMutation(
+    trpc.status.setVisible.mutationOptions({
+      onSuccess: () =>
+        void queryClient.invalidateQueries({ queryKey: trpc.sessions.suspendClocks.queryKey() }),
+    }),
+  );
   const markRead = useMutation(trpc.status.markRead.mutationOptions());
   // biome-ignore lint/correctness/useExhaustiveDependencies: report changes only
   useEffect(() => {
@@ -914,10 +936,7 @@ export function App() {
             notice={keyNotice}
             workspaces={profileWorkspaces}
             memory={memory.data ?? null}
-            suspendedSessions={
-              (sessions.data ?? []).filter((s) => s.kind === 'claude' && s.status === 'suspended')
-                .length
-            }
+            suspendedSessions={suspendedSessions}
           />
 
           {editingProfile && profiles.some((p) => p.id === editingProfile) ? (
