@@ -20,6 +20,12 @@ When {{app}} starts again, Claude continues the same conversation in each worksp
 
 In a profile that [suspends idle sessions](suspend), only the workspace you're looking at and those whose work is continued start right away; the others start suspended and resume when you open them.
 
+## When there is nothing to resume
+
+Claude saves a conversation only once you send its first prompt. If Claude stopped before that, there is no conversation to resume, so {{app}} starts a new one, and the Claude tab says so above the terminal: **There was no saved conversation to resume, so Claude started a new one.** Click × to hide it.
+
+**Start Claude**, and <kbd>↵</kbd> in a Claude tab whose Claude has ended, start Claude again in that same tab, not in a new one.
+
 ## Work that was cut off
 
 Quitting, logging out, an update with `install.sh` or a crash stops Claude in the middle of its turn, together with any commands or background agents it had running. {{app}} remembers where that happened. A workspace counts as **unfinished** when Claude was:

@@ -5,6 +5,7 @@ import { numberedBranch, validBranchName } from '@shared/branch';
 import { BRAND } from '@shared/brand';
 import { projectWorktreeDir, WORKTREES_DIR } from '@shared/projects';
 import { DEFAULT_PORT_RANGE, type Profile, type Project } from '@shared/schemas';
+import { NEW_CONVERSATION_NOTE } from '@shared/suspend';
 import { parseTask } from '@shared/tasks';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import {
@@ -815,6 +816,15 @@ export class WorkspaceService {
       .find((s) => s.workspaceId === workspaceId && s.kind === 'claude' && s.status === 'running');
   }
 
+  /** The workspace's latest Claude tab whose Claude has exited. */
+  private exitedClaude(workspaceId: string): SessionInfo | undefined {
+    return this.terminals.host
+      .list()
+      .findLast(
+        (s) => s.workspaceId === workspaceId && s.kind === 'claude' && s.status === 'exited',
+      );
+  }
+
   private suspendedClaude(workspaceId: string): SessionInfo | undefined {
     return this.terminals.host
       .list()
@@ -1010,16 +1020,17 @@ export class WorkspaceService {
         workspace,
         this.settingsFile(workspace.profileId),
         {
-          resume: true,
+          ...this.resumeOptions(workspace),
           into: suspended.id,
           restore: this.restoreArgs?.(suspended.id) ?? [],
         },
       );
     }
+    // An exited Claude starts again in its own tab, not a new one (spec §9.8).
     return this.terminals.startClaudeInWorkspace(
       workspace,
       this.settingsFile(workspace.profileId),
-      this.startOptions(workspace),
+      { ...this.startOptions(workspace), into: this.exitedClaude(workspaceId)?.id },
     );
   }
 
@@ -1028,8 +1039,23 @@ export class WorkspaceService {
    * new conversation with the Start prompt, every later one resumes (§9.4).
    */
   private startOptions(workspace: Workspace) {
-    if (!this.records.startPromptPending(workspace.id)) return { resume: true };
+    if (!this.records.startPromptPending(workspace.id)) return this.resumeOptions(workspace);
     return { prompt: this.firstPrompt(workspace), sessionId: this.newConversation(workspace) };
+  }
+
+  /**
+   * Resuming its conversation (spec §9.4), unless Claude never saved it: a
+   * start without a prompt writes no transcript, and `--resume` would fail.
+   * Then a new conversation with the same id, and a note (spec §9.8).
+   */
+  private resumeOptions(workspace: Workspace) {
+    const id = workspace.claudeSessionId;
+    const transcript = this.records.transcriptPath(workspace.id);
+    // Only the transcript Claude reported for this conversation tells (decision D12).
+    if (id && transcript && path.basename(transcript) === `${id}.jsonl`) {
+      if (!fs.existsSync(transcript)) return { sessionId: id, note: NEW_CONVERSATION_NOTE };
+    }
+    return { resume: true };
   }
 
   /**

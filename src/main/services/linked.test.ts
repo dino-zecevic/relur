@@ -13,7 +13,7 @@ import { SessionHost } from '../sessions/host';
 import { createFixture, type Fixture } from '../test-support/git-fixtures';
 import { type CliLinkEvent, CliLinkService } from './cli-link';
 import { ProjectService } from './projects';
-import { TerminalService, workspaceClaudeLaunch } from './terminals';
+import { newConversationArgs, TerminalService, workspaceClaudeLaunch } from './terminals';
 import { setupFailureMessage, WorkspaceService } from './workspaces';
 
 vi.mock('electron', () => ({ app: { getLocale: () => 'en-US', getVersion: () => '0.0.0' } }));
@@ -60,6 +60,33 @@ describe('Claude arguments (spec §21.3)', () => {
       args: ['--settings', '/s.json', '--continue', '--add-dir', '/w/web'],
       env: { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1' },
     });
+  });
+
+  it('replaces a resume that has no conversation with a new one (spec §9.8)', () => {
+    const fresh = newConversationArgs([
+      '--settings',
+      '/s.json',
+      '--resume',
+      's1',
+      '--add-dir',
+      '/w',
+    ]);
+    expect(fresh).toEqual([
+      '--settings',
+      '/s.json',
+      '--session-id',
+      expect.any(String),
+      '--add-dir',
+      '/w',
+    ]);
+    expect(fresh?.[3]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(newConversationArgs(['--continue', '--add-dir', '/w'])).toEqual([
+      '--session-id',
+      expect.any(String),
+      '--add-dir',
+      '/w',
+    ]);
+    expect(newConversationArgs(['--settings', '/s.json', '--session-id', 's1'])).toBeNull();
   });
 
   it('names the repositories in setup failures and the PR prompt', () => {

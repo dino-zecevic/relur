@@ -31,6 +31,7 @@ import { OpenAllDialog, showAppNotice, useOpenInEditor } from './EditorPicker';
 import { LinkRepositoryDialog } from './LinkRepositoryDialog';
 import { RepoChips } from './RepoChips';
 import { ResponsesPanel } from './ResponsesPanel';
+import { SessionNote } from './SessionNote';
 import { useSkillsChanges } from './SkillSources';
 import { SpecView } from './SpecView';
 import { TerminalTabs } from './TerminalTabs';
@@ -712,6 +713,7 @@ export function WorkspaceView({
           </button>
         </div>
       )}
+      <SessionNote session={active} className="px-4" />
       {error ? (
         <p role="alert" className="px-4 py-2 text-md text-st-error select-text">
           ✕ {error}

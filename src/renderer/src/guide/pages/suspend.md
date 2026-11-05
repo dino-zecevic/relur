@@ -14,6 +14,7 @@ Claude is suspended once all of this has held for the whole time you chose. If o
 - **Claude is waiting:** Done, Waiting for input, Awaiting approval, interrupted with <kbd>Esc</kbd>, or resumed and waiting at its prompt. Never while it's Working or asks for permission.
 - **Nothing runs in the background:** no background command or agent of Claude's (the sidebar's **1 running** or **2 in background**). A dev server Claude started keeps the workspace running.
 - **You haven't started typing:** text typed into Claude's prompt and not yet sent keeps it running until you send it with <kbd>↵</kbd>, a prompt or a command such as `/model`. Arrow keys, <kbd>Esc</kbd> and the like don't count, nor does moving or clicking the mouse over the terminal. Text you typed and deleted again still counts until then.
+- **There is a conversation to resume:** Claude saves its conversation when you send the first prompt. A Claude you haven't sent anything yet keeps running, as there would be nothing to resume.
 - **It isn't kept running:** see below.
 
 Suspending stops Claude and everything it started, as quitting does. The workspace keeps its state, so a Done workspace is still Done.
@@ -57,7 +58,7 @@ For Claude started with **Start Claude here**, right-click its tab in the projec
 
 ## Why one isn't suspended
 
-In the project view's **Workspaces** table, hover a workspace's status. While its Claude runs, the tooltip says why it isn't suspended, for example "Not suspended: a draft in the prompt", or when it will be: "Suspended in 3 min if it stays idle". The reasons are the conditions above: shown in a window, Claude isn't idle, background work running, a draft in the prompt, Keep Claude Running is on.
+In the project view's **Workspaces** table, hover a workspace's status. While its Claude runs, the tooltip says why it isn't suspended, for example "Not suspended: a draft in the prompt", or when it will be: "Suspended in 3 min if it stays idle". The reasons are the conditions above: shown in a window, Claude isn't idle, background work running, a draft in the prompt, no conversation yet, Keep Claude Running is on.
 
 {{app}}'s log, `app.log` in its settings folder, has a line each time a session's clock starts, starts again (with the reason), and when it is suspended or resumed.
 

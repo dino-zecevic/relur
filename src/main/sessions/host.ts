@@ -36,6 +36,8 @@ export interface SpawnOptions {
   workspaceId?: string | null;
   /** The session's id, when the caller chose it before the spawn (its env names it, spec §9.2). */
   id?: string;
+  /** Claude: a note on this start, shown above its terminal (SessionInfo.note). */
+  note?: string | null;
 }
 
 export interface SessionHostOptions {
@@ -153,6 +155,36 @@ export class SessionHost {
     await session.exited;
     if (this.closed) throw new Error('Quitting: no new terminal sessions start');
     if (session.info.status !== 'suspended') return session.info;
+    this.restart(session, { launching: false, resuming: true, note: options.note ?? null });
+    this.launch(session, options);
+    this.events.emit('resume', session.info);
+    this.changed();
+    return session.info;
+  }
+
+  /**
+   * Starts an exited Claude session's process again in the same session
+   * (Start Claude, spec §9.8): its tab stays, views attach again
+   * (`generation`), and the output starts afresh. Listeners hear it as a spawn.
+   */
+  relaunch(id: string, options: SpawnOptions): SessionInfo {
+    if (this.closed) throw new Error('Quitting: no new terminal sessions start');
+    const session = this.session(id);
+    if (session.info.kind !== 'claude' || session.info.status !== 'exited') {
+      throw new Error('Only an exited Claude session starts again in place');
+    }
+    this.restart(session, { launching: true, resuming: false, note: options.note ?? null });
+    this.launch(session, options);
+    this.events.emit('spawn', session.info);
+    this.changed();
+    return session.info;
+  }
+
+  /** A session about to run a new process: fresh output, and views attach again. */
+  private restart(
+    session: Session,
+    start: Pick<SessionInfo, 'launching' | 'resuming' | 'note'>,
+  ): void {
     if (session.flushTimer) clearTimeout(session.flushTimer);
     session.flushTimer = null;
     session.pending = '';
@@ -162,17 +194,12 @@ export class SessionHost {
     session.sinks.clear();
     session.info = {
       ...session.info,
+      ...start,
       status: 'running',
       exitCode: null,
       signal: null,
-      launching: false,
-      resuming: true,
       generation: session.info.generation + 1,
     };
-    this.launch(session, options);
-    this.events.emit('resume', session.info);
-    this.changed();
-    return session.info;
   }
 
   /**
@@ -215,6 +242,7 @@ export class SessionHost {
         launching: options.kind === 'claude',
         resuming: false,
         generation: 0,
+        note: options.note ?? null,
       },
       pty: null,
       alive: false,

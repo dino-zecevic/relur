@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import type { WorkspaceState } from '@shared/status';
 import {
   BLOCKER_TEXT,
@@ -56,6 +57,8 @@ export interface SuspendDeps {
   label?(info: SessionInfo): string;
   /** app.log (spec §3.4): the idle clocks, suspends and resumes. */
   log?: { write(line: string): void } | null;
+  /** Whether a file exists: Claude's transcript (spec §9.8). */
+  exists?(file: string): boolean;
   /** Length of a minute; shorter in the e2e tests. */
   minuteMs?: number;
   readyMs?: number;
@@ -73,6 +76,10 @@ interface Facts {
   permissionMode: string | null;
   /** From the status line; given back with `--model` on resume. */
   model: string | null;
+  /** Claude's transcript, from hook payloads (read-only use, decision D12). */
+  transcript: string | null;
+  /** The transcript was seen to exist: Claude saved its conversation. */
+  saved: boolean;
   /** Since when it may be suspended; null while it may not. */
   eligibleSince: number | null;
   /** What the last check found, for app.log; undefined before the first. */
@@ -119,6 +126,8 @@ export class SuspendService {
           draft: false,
           permissionMode: null,
           model: null,
+          transcript: null,
+          saved: false,
           eligibleSince: null,
           main: info.workspaceId ? null : { state: 'starting', background: 0, waiting: false },
         });
@@ -166,6 +175,12 @@ export class SuspendService {
     const payload = record(message.payload);
     const mode = str(payload.permission_mode);
     if (mode) facts.permissionMode = mode;
+    // A new one after /clear: saved once its file exists.
+    const transcript = str(payload.transcript_path);
+    if (transcript && transcript !== facts.transcript) {
+      facts.transcript = transcript;
+      facts.saved = false;
+    }
     if (message.event === 'UserPromptSubmit' && !isBackgroundHandBack(str(payload.prompt))) {
       facts.draft = false;
     }
@@ -323,6 +338,14 @@ export class SuspendService {
     this.deps.log?.write(`suspend ${label}: ${text}`);
   }
 
+  /** Whether Claude has written its transcript yet; once it has, it stays so. */
+  private saved(facts: Facts): boolean {
+    if (!facts.saved && facts.transcript) {
+      facts.saved = (this.deps.exists ?? fs.existsSync)(facts.transcript);
+    }
+    return facts.saved;
+  }
+
   private markReady(id: string, settleMs: number): void {
     this.clearReady(id);
     this.deps.host.ready(id);
@@ -352,6 +375,7 @@ export class SuspendService {
       started: facts.started,
       draft: facts.draft,
       resuming: info.resuming,
+      conversation: this.saved(facts),
     };
     if (info.workspaceId) {
       const workspace = this.deps.workspace(info.workspaceId);
@@ -437,6 +461,8 @@ export class SuspendService {
         draft: false,
         permissionMode: null,
         model: null,
+        transcript: null,
+        saved: false,
         eligibleSince: null,
         main: info.workspaceId ? null : { state: 'starting', background: 0, waiting: false },
       };

@@ -20,7 +20,7 @@ import { appConfigDir } from '../src/main/paths';
 import { createFixture } from '../src/main/test-support/git-fixtures';
 import { SEED_CONFIG } from '../src/main/test-support/seed-config';
 import { envVar } from '../src/shared/brand';
-import { SUSPENDED_TOOLTIP } from '../src/shared/suspend';
+import { NEW_CONVERSATION_NOTE, SUSPENDED_TOOLTIP } from '../src/shared/suspend';
 import {
   type Cdp,
   chooseFromNextContextMenu,
@@ -79,9 +79,12 @@ async function main() {
     fs.writeFileSync(path.join(fx.root, '.zshrc'), '');
     // A stand-in for Claude: passes the setup check, records how it was
     // started, its folder, its pid and a child it starts, runs SessionStart
-    // (after 3 s while `slow-start` exists), turns on mouse tracking as Claude
+    // (after 3 s while `slow-start` exists) with its transcript's path (none
+    // while `no-transcript-path` exists), turns on mouse tracking as Claude
     // Code does (any motion, SGR reports), turns `prompt`, `done` and
-    // `background` into their hooks and records every other line typed into it.
+    // `background` into their hooks, ends at `exit`, and records every other
+    // line typed into it. As Claude Code, it writes its transcript at the
+    // first prompt, and a resume without one fails with Claude's message.
     const fakeClaude = path.join(fx.root, 'bin', 'fake-claude');
     fs.mkdirSync(path.dirname(fakeClaude));
     fs.writeFileSync(
@@ -91,12 +94,21 @@ case "$1" in
   --version) echo '9.9.9 (Claude Code)'; exit 0 ;;
   auth) printf '{"loggedIn":true,"email":"test@example.com","configDirectory":"%s"}\\n' "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; exit 0 ;;
 esac
-settings=""; sid="fake-$$"; prev=""
+settings=""; sid="fake-$$"; prev=""; resume=0
 for arg in "$@"; do
   [ "$prev" = --settings ] && settings="$arg"
   { [ "$prev" = --session-id ] || [ "$prev" = --resume ]; } && sid="$arg"
+  [ "$prev" = --resume ] && resume=1
   prev="$arg"
 done
+transcript="$HOME/transcripts/$sid.jsonl"
+if [ "$resume" = 1 ] && [ ! -e "$transcript" ]; then
+  echo "$*" >> "$HOME/starts-$(basename "$PWD").txt"
+  echo "No conversation found with session ID: $sid"
+  exit 1
+fi
+path_json=",\\"transcript_path\\":\\"$transcript\\""
+[ -e "$HOME/no-transcript-path" ] && path_json=""
 helper=""
 [ -n "$settings" ] && helper=$(sed -n "s/.*\\"command\\": \\"'\\(.*\\)' hook SessionStart\\".*/\\1/p" "$settings")
 hook() { [ -n "$helper" ] && printf '%s' "$2" | "$helper" hook "$1" > /dev/null; }
@@ -107,12 +119,16 @@ echo $$ > "$HOME/pid-$name.txt"
 sleep 600 &
 echo $! > "$HOME/child-$name.txt"
 [ -e "$HOME/slow-start" ] && sleep 3
-hook SessionStart "{\\"session_id\\":\\"$sid\\"}"
+hook SessionStart "{\\"session_id\\":\\"$sid\\"$path_json}"
 printf '\\033[?1003h\\033[?1006h'
 echo "fake claude in $name"
 while IFS= read -r line; do
   case "$line" in
-    prompt) hook UserPromptSubmit '{"prompt":"Fix the login"}' ;;
+    prompt)
+      mkdir -p "$HOME/transcripts"
+      echo '{"type":"user","message":{"role":"user","content":"Fix the login"}}' >> "$transcript"
+      hook UserPromptSubmit '{"prompt":"Fix the login"}' ;;
+    exit) exit 0 ;;
     done) hook Stop '{}' ;;
     background) hook Stop '{"background_tasks":[{"type":"shell","status":"running","command":"npm run dev"}]}' ;;
     *) printf '%s\\n' "$line" >> "$HOME/input-$name.txt" ;;
@@ -203,6 +219,14 @@ done
         `the terminal of ${name}`,
       );
     };
+    /** The shown terminal's text. */
+    const screenOf = `(() => {
+      const t = [...document.querySelectorAll('[data-terminal][data-connected]')].find((e) => e.offsetParent);
+      const buf = t?.xterm?.buffer.active;
+      let text = '';
+      for (let y = 0; buf && y < buf.length; y++) text += (buf.getLine(y)?.translateToString(true) ?? '') + '\\n';
+      return text;
+    })()`;
     const stateOf = (name: string) => `((${row(name)})?.title.split('\\n')[1] ?? '')`;
     const waitState = (page: Cdp, name: string, state: string) =>
       page.waitFor(`${stateOf(name)}.startsWith(${JSON.stringify(state)})`, `${name}: ${state}`);
@@ -233,11 +257,13 @@ done
       ['Delta', 'delta'],
       ['Golf', 'golf'],
       ['Echo', 'echo'],
+      ['Foxtrot', 'foxtrot'],
     ] as const) {
       await newWorkspace(page, task, branch);
     }
     // Alpha is done; Bravo works; Charlie is done with a command in the
-    // background; Delta is kept running; Golf has a draft; Echo stays shown.
+    // background; Delta is kept running; Golf has a draft; Echo stays shown;
+    // Foxtrot never got a prompt, so Claude saved no conversation.
     await open(page, 'Alpha');
     await typeInTerminal(page, 'prompt');
     await waitState(page, 'Alpha', 'Working');
@@ -267,6 +293,10 @@ done
     await typeInTerminal(page, 'prompt');
     await typeInTerminal(page, 'background');
     await waitState(page, 'Charlie', 'Done · 1 still running');
+    await open(page, 'Delta');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'done');
+    await waitState(page, 'Delta', 'Done');
     await open(page, 'Golf');
     await typeInTerminal(page, 'half a prompt', false);
     await chooseFromNextContextMenu(running.main, 'Keep Claude Running');
@@ -306,9 +336,10 @@ done
     assert.ok(alphaTip.split('\n')[1]?.startsWith('Done'), 'the state stays');
     assert.ok(alphaTip.endsWith(SUSPENDED_TOOLTIP), alphaTip);
     assert.match(await page.eval<string>(`(${row('Alpha')}).innerText`), /Suspended/);
-    // Never while shown, working, with background work, a draft, or kept running.
+    // Never while shown, working, with background work, a draft, kept
+    // running, or without a saved conversation.
     await sleep(DELAY_MS);
-    for (const name of ['Bravo', 'Charlie', 'Delta', 'Golf', 'Echo']) {
+    for (const name of ['Bravo', 'Charlie', 'Delta', 'Golf', 'Echo', 'Foxtrot']) {
       assert.equal(await page.eval(suspendedRow(name)), false, `${name} isn't suspended`);
       assert.ok(alive(pidOf(name.toLowerCase())), `${name}'s Claude runs`);
     }
@@ -327,6 +358,7 @@ done
     assert.equal(await suspendNote('Charlie'), 'Not suspended: background work running');
     assert.equal(await suspendNote('Delta'), 'Not suspended: Keep Claude Running is on');
     assert.equal(await suspendNote('Bravo'), "Not suspended: Claude isn't idle");
+    assert.equal(await suspendNote('Foxtrot'), 'Not suspended: no conversation yet');
     // Echo's clock runs once the window no longer shows it (read again every 15 s).
     await page.waitFor(
       `/^Suspended in \\d+ min if it stays idle$/.test(document.querySelector('[data-workspace-row="${ids.Echo}"] [data-suspend-note]')?.dataset.suspendNote)`,
@@ -360,6 +392,7 @@ done
       'suspend Charlie (Work): not suspended: background work running',
       'suspend Delta (Work): not suspended: Keep Claude Running is on',
       'suspend Echo (Work): not suspended: shown in a window',
+      'suspend Foxtrot (Work): not suspended: no conversation yet',
     ]) {
       assert.ok(log.includes(` ${line}\n`), `app.log has "${line}":\n${log}`);
     }
@@ -435,11 +468,18 @@ done
     );
 
     // 5. A main checkout's Claude: started with hooks and its own session id,
-    // suspended while its tab isn't shown, resumed when it is.
+    // suspended, once it has a conversation, while its tab isn't shown,
+    // resumed when it is.
     await showProject(page);
     await clickButtonText(page, 'Start Claude here');
     await waitForFile(file('starts-api.txt'));
     assert.match(starts('api')[0] ?? '', /^--settings .+ --session-id \S+/);
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'done');
+    await until(
+      () => read('transcripts/' + sessionIdOf('api') + '.jsonl') !== '',
+      'its transcript',
+    );
     const mainPid = pidOf('api');
     await open(page, 'Echo');
     await until(() => !alive(mainPid), "the main checkout's Claude suspended", DELAY_MS + 15_000);
@@ -452,7 +492,54 @@ done
     await until(() => starts('api').length === 2, "the main checkout's Claude resumed");
     assert.ok(starts('api')[1]?.includes(`--resume ${sessionIdOf('api')}`), starts('api')[1]);
 
-    // 6. Quit with Bravo working (continued at start), Alpha and Echo idle
+    // 6. A conversation that was never saved, as older builds left one:
+    // Claude ended, and a resume of its session id would fail. Start Claude
+    // starts a new conversation with that id instead, in the same tab, with
+    // the note.
+    const claudeTabs = () =>
+      page.eval<number>(
+        `[...document.querySelectorAll('[role=tab]')].filter((t) => t.title.includes('· claude')).length`,
+      );
+    const note = `document.querySelector('[data-session-note]')?.innerText ?? ''`;
+    const startClaude = async (name: string) => {
+      await typeInTerminal(page, 'exit');
+      await page.waitFor(
+        `[...document.querySelectorAll('button')].some((b) => b.textContent === 'Start Claude')`,
+        `Start Claude in ${name}`,
+      );
+      await clickButtonText(page, 'Start Claude');
+    };
+    await open(page, 'Foxtrot');
+    await startClaude('Foxtrot');
+    await until(() => starts('foxtrot').length === 2, 'Foxtrot started again');
+    assert.match(starts('foxtrot')[1] ?? '', new RegExp(`--session-id ${sessionIdOf('foxtrot')}`));
+    assert.ok(!starts('foxtrot')[1]?.includes('--resume'), starts('foxtrot')[1]);
+    await page.waitFor(`${note}.includes(${JSON.stringify(NEW_CONVERSATION_NOTE)})`, 'the note');
+    assert.equal(await claudeTabs(), 1, 'no second Claude tab');
+    // Where Claude never said where its transcript is, the resume is tried:
+    // it fails as Claude's does, and a new conversation starts in that tab.
+    fs.writeFileSync(file('no-transcript-path'), '');
+    await newWorkspace(page, 'Hotel', 'hotel');
+    await open(page, 'Hotel');
+    await page.waitFor(`(${screenOf}).includes('fake claude in hotel')`, 'Hotel ready');
+    fs.rmSync(file('no-transcript-path'));
+    await startClaude('Hotel');
+    await until(() => starts('hotel').length === 3, 'Hotel started anew');
+    assert.ok(starts('hotel')[1]?.includes(`--resume ${sessionIdOf('hotel')}`), starts('hotel')[1]);
+    const hotelId = starts('hotel')[2]?.match(/--session-id (\S+)/)?.[1] ?? '';
+    assert.ok(hotelId && hotelId !== sessionIdOf('hotel'), starts('hotel')[2]);
+    await page.waitFor(`${note}.includes(${JSON.stringify(NEW_CONVERSATION_NOTE)})`, 'its note');
+    assert.equal(await claudeTabs(), 1, 'no second Claude tab in Hotel');
+    // Its next start doesn't try that resume again: Claude said where its
+    // transcript would be, and there is none.
+    await page.waitFor(`(${screenOf}).includes('fake claude in hotel')`, 'Hotel ready again');
+    await startClaude('Hotel');
+    await until(() => starts('hotel').length === 4, 'Hotel started again');
+    assert.match(starts('hotel')[3] ?? '', new RegExp(`--session-id ${hotelId}`));
+    assert.equal(await claudeTabs(), 1);
+    assert.ok(!appLog().includes('resume failed'), appLog());
+
+    // 7. Quit with Bravo working (continued at start), Alpha and Echo idle
     // (Alpha with a file not committed), Charlie with a background command,
     // Delta suspended.
     fs.writeFileSync(path.join(read('cwd-alpha.txt').trim(), 'notes.txt'), 'draft\n');
@@ -478,7 +565,7 @@ done
       number
     >;
 
-    // 7. Start: Home shows, so only Bravo, continued with §9.7, resumes; the
+    // 8. Start: Home shows, so only Bravo, continued with §9.7, resumes; the
     // rest start suspended until opened.
     running = await launch();
     ({ page } = running);

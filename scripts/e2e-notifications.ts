@@ -78,7 +78,9 @@ async function main() {
     const api = fx.localRepo('api');
     fs.writeFileSync(path.join(fx.root, '.zshrc'), '');
     // A stand-in for Claude: passes the setup check, records how it was
-    // started, runs SessionStart, and turns `prompt` and `done` into their hooks.
+    // started, runs SessionStart with its transcript's path, and turns
+    // `prompt` and `done` into their hooks. As Claude Code, it writes its
+    // transcript at the first prompt, and a resume without one fails.
     const fakeClaude = path.join(fx.root, 'bin', 'fake-claude');
     fs.mkdirSync(path.dirname(fakeClaude));
     fs.writeFileSync(
@@ -94,16 +96,21 @@ for arg in "$@"; do
   { [ "$prev" = --session-id ] || [ "$prev" = --resume ]; } && sid="$arg"
   prev="$arg"
 done
+transcript="$HOME/transcripts/$sid.jsonl"
+case " $* " in *" --resume "*) [ -e "$transcript" ] || { echo "No conversation found with session ID: $sid"; exit 1; } ;; esac
 helper=""
 [ -n "$settings" ] && helper=$(sed -n "s/.*\\"command\\": \\"'\\(.*\\)' hook SessionStart\\".*/\\1/p" "$settings")
 hook() { [ -n "$helper" ] && printf '%s' "$2" | "$helper" hook "$1" > /dev/null; }
 name=$(basename "$PWD")
 echo "$*" >> "$HOME/starts-$name.txt"
-hook SessionStart "{\\"session_id\\":\\"$sid\\"}"
+hook SessionStart "{\\"session_id\\":\\"$sid\\",\\"transcript_path\\":\\"$transcript\\"}"
 echo "fake claude in $name"
 while IFS= read -r line; do
   case "$line" in
-    prompt) hook UserPromptSubmit '{"prompt":"Fix the login"}' ;;
+    prompt)
+      mkdir -p "$HOME/transcripts"
+      echo '{"type":"user","message":{"role":"user","content":"Fix the login"}}' >> "$transcript"
+      hook UserPromptSubmit '{"prompt":"Fix the login"}' ;;
     done) hook Stop '{}' ;;
   esac
 done

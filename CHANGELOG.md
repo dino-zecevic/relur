@@ -9,6 +9,8 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - Prompt numbers in a Claude tab could sit next to a line of Claude's answer that repeated the prompt's words, for a prompt typed and pasted into. A number now goes only on the line where Claude shows the sent prompt, never on an answer or on what you're typing, and a prompt whose line can't be found for certain gets none.
 - Prompts Relur sends for you (Continue, a workflow's answer buttons, Ask Claude to write it, Create PR through Claude), and short ones such as "ok", got no number, so the prompt navigator was missing in some tabs. They are numbered like any other prompt now.
 - After a restart or a resume, the prompts Claude prints again get their numbers back, and the navigator shows; before, only prompts sent afterwards were numbered. The Responses panel no longer shows Claude's paste tags in a prompt.
+- A workspace whose Claude had not been sent a prompt yet could be suspended, and then couldn't be opened again: Claude said "No conversation found with session ID", and every **Start Claude** failed the same way in a new tab. Claude is no longer suspended before it has a conversation to resume. Where there is none, Claude starts a new conversation in the same tab and says so above the terminal; workspaces already in that state recover on the next **Start Claude**.
+- **Start Claude**, and ↵ in a Claude tab whose Claude has ended, start Claude again in that tab instead of opening another one.
 
 ## [0.4.0] - 2026-11-05
 

@@ -62,8 +62,16 @@ export interface SessionInfo {
    * at most 20 s); keys typed meanwhile aren't sent (spec §9.8).
    */
   resuming: boolean;
-  /** How many times it was resumed: each resume starts its output afresh, so views attach again. */
+  /**
+   * How many times it was resumed or started again in place: each starts its
+   * output afresh, so views attach again.
+   */
   generation: number;
+  /**
+   * Claude only: a short note on how this start went, shown above its
+   * terminal; a new conversation where none was saved to resume (spec §9.8).
+   */
+  note: string | null;
   exitCode: number | null;
   signal: number | null;
 }

@@ -21,7 +21,7 @@ A bar under the tabs says when something needs doing:
 
 - **Running setup. Claude starts when it finishes.** while setup runs.
 - When setup failed, the error with **Retry**, **Start Claude anyway** and **Delete…**; see [Setup for new workspaces](workspace-setup#when-setup-fails).
-- **Claude isn't running in this workspace.** with **Start Claude**, once Claude has exited or was never started.
+- **Claude isn't running in this workspace.** with **Start Claude**, once Claude has exited or was never started; Claude starts again in its own tab. When there was no conversation to resume, a note says Claude started a new one; see [Quitting and resuming](resume#when-there-is-nothing-to-resume).
 - **Claude didn't finish when {{app}} closed:** and why, with **Continue** and **Dismiss**, when the workspace is unfinished; see [The Unfinished marker](resume#the-unfinished-marker).
 - When the branch is merged, **Delete workspace?** with **Delete…**; see [Finishing work](finishing-work#the-pr-badge).
 

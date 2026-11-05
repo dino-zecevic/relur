@@ -4,6 +4,7 @@ import path from 'node:path';
 import { envVar } from '@shared/brand';
 import type { Profile, Project } from '@shared/schemas';
 import { shellQuote } from '@shared/shell';
+import { NEW_CONVERSATION_NOTE } from '@shared/suspend';
 import type { SessionInfo, SessionKind } from '@shared/terminal-protocol';
 import { linkedRepos, type Workspace, workspaceRepo } from '@shared/workspaces';
 import { app } from 'electron';
@@ -63,6 +64,23 @@ export function sessionProjects(
 
 /** Quick exits after which the profile's setup is checked again. */
 const EARLY_EXIT_MS = 5000;
+
+/**
+ * What Claude Code prints, and exits with 1, when there is no conversation to
+ * resume: `--resume <id>` or `--continue` (checked live with 2.1.318).
+ */
+const NO_CONVERSATION = /No conversation found (with session ID|to continue)/;
+
+/**
+ * Claude's arguments with `--resume <id>` or `--continue` replaced by a new
+ * conversation's `--session-id`; null when they resume nothing.
+ */
+export function newConversationArgs(args: readonly string[]): string[] | null {
+  const at = args.findIndex((a) => a === '--resume' || a === '--continue');
+  if (at === -1) return null;
+  const taken = args[at] === '--resume' ? 2 : 1;
+  return [...args.slice(0, at), '--session-id', randomUUID(), ...args.slice(at + taken)];
+}
 
 /** Whether Claude may start in a profile: its setup check passed (spec §6.11). */
 export interface ClaudeGate {
@@ -265,20 +283,24 @@ export class TerminalService {
       sessionId = null,
       into,
       restore,
+      note,
     }: {
       resume?: boolean;
       prompt?: string | null;
       sessionId?: string | null;
-      /** A suspended session to resume in (spec §9.8). */
+      /** A suspended session to resume in, or an exited one to start again in (spec §9.8). */
       into?: string;
       /** Arguments that bring back what the session had: permission mode, model (spec §9.8). */
       restore?: string[];
+      /** Shown above the terminal (SessionInfo.note). */
+      note?: string | null;
     } = {},
   ): Promise<SessionInfo> {
     const launch = workspaceClaudeLaunch(workspace, settingsFile, { resume, sessionId });
     return this.spawnClaude({
       into,
       restore,
+      note,
       title: `${workspace.name} · claude`,
       profile: this.env.profile(workspace.profileId),
       project: this.project(workspace.projectId),
@@ -456,10 +478,12 @@ export class TerminalService {
     extraEnv?: Record<string, string>;
     /** The first message, after every option (spec §9.1). */
     prompt?: string | null;
-    /** A suspended session to resume in, instead of a new one (spec §9.8). */
+    /** A suspended session to resume in, or an exited one to start again in (spec §9.8). */
     into?: string;
     /** Added after the profile's own arguments: what the session had (spec §9.8). */
     restore?: string[];
+    /** Shown above the terminal (SessionInfo.note). */
+    note?: string | null;
   }): Promise<SessionInfo> {
     const { title, profile, project, workspace, cwd, args } = options;
     const env = { ...(await this.processEnv(profile, project, workspace)), ...options.extraEnv };
@@ -496,16 +520,32 @@ export class TerminalService {
       profileId: profile.id,
       projectId: project.id,
       workspaceId: workspace?.id ?? null,
+      note: options.note ?? null,
     };
-    const session = options.into
-      ? await this.host.resume(options.into, spawn)
-      : this.host.spawn(spawn);
+    const into = options.into ? this.host.get(options.into) : null;
+    const session =
+      into?.status === 'suspended'
+        ? await this.host.resume(into.id, spawn)
+        : into?.status === 'exited'
+          ? this.host.relaunch(into.id, spawn)
+          : this.host.spawn(spawn);
     if (workspace && skills) this.skills?.claudeStarted(workspace.id, skills.fingerprint);
     const started = Date.now();
     void this.host.waitForExit(session.id).then((exited) => {
-      if (exited.exitCode !== 0 && Date.now() - started < EARLY_EXIT_MS) {
-        this.claudeGate?.startFailed(profile.id);
+      if (exited.status !== 'exited' || exited.exitCode === 0) return;
+      if (Date.now() - started >= EARLY_EXIT_MS) return;
+      // No conversation to resume (spec §9.8): once, a new one in the same tab.
+      const fresh = newConversationArgs(args);
+      if (fresh && NO_CONVERSATION.test(this.host.scrollback(session.id))) {
+        void this.spawnClaude({
+          ...options,
+          args: fresh,
+          into: session.id,
+          note: NEW_CONVERSATION_NOTE,
+        }).catch((error: unknown) => console.error('starting a new conversation failed', error));
+        return;
       }
+      this.claudeGate?.startFailed(profile.id);
     });
     return session;
   }

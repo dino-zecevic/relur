@@ -19,6 +19,7 @@ const idle: SuspendFacts = {
   keepRunning: false,
   draft: false,
   resuming: false,
+  conversation: true,
 };
 
 describe('suspendBlocker (spec §9.8)', () => {
@@ -50,6 +51,16 @@ describe('suspendBlocker (spec §9.8)', () => {
     expect(suspendBlocker({ ...idle, shown: true })).toBe('shown');
     expect(suspendBlocker({ ...idle, keepRunning: true })).toBe('kept');
     expect(suspendBlocker({ ...idle, resuming: true })).toBe('resuming');
+  });
+
+  it('never suspends a Claude without a saved conversation, which a resume needs', () => {
+    expect(suspendBlocker({ ...idle, conversation: false })).toBe('no-conversation');
+    expect(suspendBlocker({ ...idle, state: 'starting', conversation: false })).toBe(
+      'no-conversation',
+    );
+    expect(suspendClockNote({ workspaceId: 'w', blocker: 'no-conversation', dueAt: null }, 0)).toBe(
+      'Not suspended: no conversation yet',
+    );
   });
 
   it('never suspends with background work', () => {

@@ -13,7 +13,11 @@ class FakeHost {
   readonly sessions = new Map<string, SessionInfo>();
   readonly suspended: string[] = [];
 
-  add(id: string, more: Partial<SessionInfo> = {}): SessionInfo {
+  /**
+   * A running Claude; with `saved`, its hooks name its transcript, which
+   * exists (Claude saved its conversation).
+   */
+  add(id: string, more: Partial<SessionInfo> = {}, saved = true): SessionInfo {
     const info: SessionInfo = {
       id,
       kind: 'claude',
@@ -28,10 +32,15 @@ class FakeHost {
       launching: false,
       resuming: false,
       generation: 0,
+      note: null,
       ...more,
     };
     this.sessions.set(id, info);
     this.events.emit('spawn', info);
+    if (saved) {
+      files.add(`/t/${id}.jsonl`);
+      hook('PreCompact', { sessionId: id }, { transcript_path: `/t/${id}.jsonl` });
+    }
     return info;
   }
   set(id: string, more: Partial<SessionInfo>) {
@@ -77,6 +86,8 @@ let kept: string[];
 let resumes: string[];
 let follows: [string, string][];
 let logged: string[];
+/** Transcript files that exist. */
+let files: Set<string>;
 
 const hook = (event: string, more: Partial<HookMessage> = {}, payload: object = {}) =>
   service.handleHook({ event, workspaceId: null, profileId: 'work', payload, ...more });
@@ -100,6 +111,7 @@ beforeEach(() => {
   resumes = [];
   follows = [];
   logged = [];
+  files = new Set();
   service = new SuspendService({
     host: host as never,
     delayMin: () => delay,
@@ -113,6 +125,7 @@ beforeEach(() => {
     followMainClaude: (sessionId, claudeId) => follows.push([sessionId, claudeId]),
     label: (info) => info.id,
     log: { write: (line) => logged.push(line) },
+    exists: (file) => files.has(file),
     minuteMs: MINUTE,
     readyMs: 20_000,
     settleMs: 2000,
@@ -170,6 +183,33 @@ describe('SuspendService (spec §9.8)', () => {
     states.ws_off = workspace('done');
     pass(60 * MINUTE);
     expect(host.suspended).toEqual([]);
+  });
+
+  it('never suspends before Claude saved a conversation, nor after /clear until it saves the new one', () => {
+    host.add('a', {}, false);
+    states.ws_a = workspace('starting');
+    hook('SessionStart', { sessionId: 'a' }, { transcript_path: '/t/new.jsonl' });
+    pass(60 * MINUTE);
+    expect(host.suspended).toEqual([]);
+    expect(logged).toEqual(['suspend a: not suspended: no conversation yet']);
+    expect(service.clocks()).toEqual([
+      { workspaceId: 'ws_a', blocker: 'no-conversation', dueAt: null },
+    ]);
+    // The first prompt writes the transcript.
+    files.add('/t/new.jsonl');
+    pass(1);
+    pass(5 * MINUTE);
+    expect(host.suspended).toEqual(['a']);
+
+    host.add('b');
+    states.ws_b = workspace('done');
+    hook('SessionStart', { sessionId: 'b' }, { transcript_path: '/t/cleared.jsonl' });
+    pass(60 * MINUTE);
+    expect(host.suspended).toEqual(['a']);
+    files.add('/t/cleared.jsonl');
+    pass(1);
+    pass(5 * MINUTE);
+    expect(host.suspended).toEqual(['a', 'b']);
   });
 
   it('logs the clock: eligible, reset with the reason, suspended, resumed (spec §3.4)', async () => {

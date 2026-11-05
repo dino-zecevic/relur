@@ -12,6 +12,13 @@ export type SuspendChoice = (typeof SUSPEND_CHOICES)[number];
 /** The mark's tooltip on the sidebar row, in the Workspaces table and on a tab (spec §9.8). */
 export const SUSPENDED_TOOLTIP = 'Suspended to save memory; resumes when you open it';
 
+/**
+ * Above a Claude terminal that started a new conversation because there was
+ * none saved to resume (spec §9.8).
+ */
+export const NEW_CONVERSATION_NOTE =
+  'There was no saved conversation to resume, so Claude started a new one.';
+
 /** How long a resume waits for Claude's SessionStart before it counts as ready (spec §9.8). */
 export const RESUME_READY_MS = 20_000;
 
@@ -33,6 +40,11 @@ export interface SuspendFacts {
   draft: boolean;
   /** Being resumed: Claude isn't ready yet. */
   resuming: boolean;
+  /**
+   * Claude has saved its conversation (its transcript file exists): it writes
+   * none before the first prompt, and a resume without one fails.
+   */
+  conversation: boolean;
 }
 
 export type SuspendBlocker =
@@ -42,7 +54,8 @@ export type SuspendBlocker =
   | 'background'
   | 'kept'
   | 'draft'
-  | 'resuming';
+  | 'resuming'
+  | 'no-conversation';
 
 /** Idle states: Claude waits at its prompt (spec §9.8). */
 const IDLE_STATES: readonly WorkspaceState[] = ['done', 'needs-input', 'interrupted'];
@@ -50,7 +63,8 @@ const IDLE_STATES: readonly WorkspaceState[] = ['done', 'needs-input', 'interrup
 /**
  * Why the session can't be suspended now, or null when it may be. Never while
  * Claude works or asks for permission; a Claude in Starting only once its
- * SessionStart arrived (it was resumed or started and waits).
+ * SessionStart arrived (it was resumed or started and waits); never before
+ * Claude saved a conversation to resume.
  */
 export function suspendBlocker(facts: SuspendFacts): SuspendBlocker | null {
   if (facts.delayMin === null) return 'off';
@@ -61,6 +75,7 @@ export function suspendBlocker(facts: SuspendFacts): SuspendBlocker | null {
   if (!idle) return 'busy';
   if (facts.background > 0) return 'background';
   if (facts.draft) return 'draft';
+  if (!facts.conversation) return 'no-conversation';
   return null;
 }
 
@@ -128,6 +143,7 @@ export const BLOCKER_TEXT: Record<SuspendBlocker, string> = {
   busy: "Claude isn't idle",
   background: 'background work running',
   draft: 'a draft in the prompt',
+  'no-conversation': 'no conversation yet',
 };
 
 /** What a running Claude's idle clock says now (spec §9.8). */

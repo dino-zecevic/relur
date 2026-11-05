@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { NEW_CONVERSATION_NOTE } from '@shared/suspend';
 import type { Workspace } from '@shared/workspaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigStore } from '../config/store';
@@ -137,5 +138,53 @@ describe('Start prompt (spec §13.5)', () => {
     fs.rmSync(path.join(home, 'c', 'args.txt'));
     await workspaces.restartClaude('c');
     await vi.waitFor(() => expect(args()).toBe(`--settings /s.json --resume ${session}`));
+  });
+});
+
+describe('a conversation that was never saved (spec §9.8)', () => {
+  const claudes = (id: string) =>
+    host.list().filter((s) => s.kind === 'claude' && s.workspaceId === id);
+
+  it('starts a new one with the same id instead of resuming, in the same tab', async () => {
+    const args = () => fs.readFileSync(path.join(home, 'c', 'args.txt'), 'utf8').trim();
+    const transcript = path.join(home, 'transcripts', 'sess-c.jsonl');
+    records.setClaudeSession('c', 'sess-c', transcript);
+    const first = await workspaces.startClaude('c');
+    await vi.waitFor(() => expect(args()).toBe('--settings /s.json --session-id sess-c'));
+    expect(first.note).toBe(NEW_CONVERSATION_NOTE);
+    // Claude ends; once it saved the conversation, Start Claude resumes it in that tab.
+    await host.stop(first.id);
+    fs.mkdirSync(path.dirname(transcript));
+    fs.writeFileSync(transcript, '{}\n');
+    fs.rmSync(path.join(home, 'c', 'args.txt'));
+    const again = await workspaces.startClaude('c');
+    await vi.waitFor(() => expect(args()).toBe('--settings /s.json --resume sess-c'));
+    expect(again).toMatchObject({ id: first.id, generation: 1, note: null });
+    expect(claudes('c').map((s) => s.id)).toEqual([first.id]);
+  });
+
+  it('starts a new one in the same tab when Claude finds nothing to resume', async () => {
+    const starts = path.join(home, 'a', 'starts.txt');
+    // As Claude Code: a resume of a conversation it doesn't have fails at once.
+    fs.writeFileSync(
+      path.join(home, 'bin', 'claude'),
+      `#!/bin/sh\necho "$*" >> "$PWD/starts.txt"\ncase " $* " in *" --resume "*) echo "No conversation found with session ID: sess-a"; exit 1 ;; esac\nexec sleep 30\n`,
+      { mode: 0o755 },
+    );
+    const info = await workspaces.startClaude('a');
+    await vi.waitFor(() =>
+      expect(fs.existsSync(starts) && fs.readFileSync(starts, 'utf8').trim().split('\n')).toEqual([
+        '--settings /s.json --resume sess-a',
+        expect.stringMatching(/^--settings \/s\.json --session-id [0-9a-f-]{36}$/),
+      ]),
+    );
+    await vi.waitFor(() =>
+      expect(host.get(info.id)).toMatchObject({
+        status: 'running',
+        generation: 1,
+        note: NEW_CONVERSATION_NOTE,
+      }),
+    );
+    expect(claudes('a').map((s) => s.id)).toEqual([info.id]);
   });
 });

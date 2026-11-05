@@ -24,6 +24,7 @@ import { ago } from '../ui/time';
 import { SETUP_TAB, SKILLS_TAB, WORKFLOW_TAB, WORKSPACES_TAB } from '../view';
 import { ProjectEditor, useOpenInEditor } from './EditorPicker';
 import { ProjectSetup } from './ProjectSetup';
+import { SessionNote } from './SessionNote';
 import { ProjectSkills } from './SkillSources';
 import { SessionTab, sessionTabNames } from './TerminalTabs';
 import { TerminalView } from './TerminalView';
@@ -368,6 +369,7 @@ export function ProjectView({
           </div>
         ) : null}
       </div>
+      <SessionNote session={active} className="px-6" />
       {error ? (
         <p role="alert" className="px-6 py-2 text-md text-st-error select-text">
           ✕ {error}

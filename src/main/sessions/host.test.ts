@@ -346,6 +346,38 @@ describe('SessionHost suspend and resume (spec §9.8)', () => {
     await host.shutdown();
   });
 
+  it('starts an exited Claude again in the same session, as a spawn, with its note', async () => {
+    const host = new SessionHost({ killTimeoutMs: 300 });
+    const spawned: string[] = [];
+    host.onSpawn((i) => spawned.push(i.id));
+    const info = host.spawn(claude('echo failed; exit 1'));
+    const old = recorder();
+    host.attach(info.id, old.sink);
+    await host.waitForExit(info.id);
+    expect(host.get(info.id)).toMatchObject({ status: 'exited', exitCode: 1 });
+    const again = host.relaunch(
+      info.id,
+      claude('echo second; sleep 30', { id: info.id, note: 'New' }),
+    );
+    expect(again).toMatchObject({
+      id: info.id,
+      status: 'running',
+      exitCode: null,
+      resuming: false,
+      generation: 1,
+      note: 'New',
+    });
+    expect(spawned).toEqual([info.id, info.id]);
+    expect(old.closed).toBe(true);
+    const view = recorder();
+    host.attach(info.id, view.sink);
+    await until(() => view.output().includes('second'), 'the new output');
+    expect(view.output()).not.toContain('failed');
+    // Only an exited Claude starts again in place.
+    expect(() => host.relaunch(info.id, claude('true', { id: info.id }))).toThrow();
+    await host.shutdown();
+  });
+
   it('starts a session suspended, and ends one that cannot resume as exited', async () => {
     const host = new SessionHost({ killTimeoutMs: 300 });
     const exits: string[] = [];
