@@ -306,6 +306,13 @@ while IFS= read -r line; do
       printf '\\342\\235\\257 Format the files\\n'
       hook UserPromptSubmit '{"prompt":"Format the files"}'
       hook Stop '{}' ;;
+    # Interrupted with Esc after some text: Claude Code's note follows it (spec §6.8).
+    interrupted)
+      printf '%s\\n' '{"type":"user","message":{"role":"user","content":"Explain the build"},"origin":{"kind":"human"}}' >> "$HOME/transcript-$n.jsonl"
+      printf '\\342\\235\\257 Explain the build\\n'
+      hook UserPromptSubmit '{"prompt":"Explain the build"}'
+      printf '%s\\n' '{"type":"assistant","message":{"id":"r1","role":"assistant","content":[{"type":"text","text":"The build has three steps. First"}]},"timestamp":"2026-10-28T12:06:00Z"}' '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}' >> "$HOME/transcript-$n.jsonl"
+      printf '\\342\\217\\272 The build has three steps. First\\n\\n' ;;
     # Claude's full-screen renderer draws in the alternate screen; classic leaves it.
     fullscreen) printf '\\033[?1049h\\033[HFull screen\\n' ;;
     classic) printf '\\033[?1049l' ;;
@@ -1019,6 +1026,21 @@ exec sleep 600
       'Done: two fixes.',
       whole,
     ]);
+    // A prompt interrupted with Esc keeps its entry, its partial text marked Interrupted.
+    await typeInTerminal(page, 'interrupted');
+    await page.waitFor(`${panelResponses} === 6`, 'the interrupted entry');
+    await page.waitFor(`!!${entry(6)}.querySelector('[data-response-interrupted]')`, 'Interrupted');
+    assert.match(
+      await page.eval<string>(`${entry(6)}.innerText`),
+      /› Explain the build\nInterrupted[\s\S]*The build has three steps\. First/,
+    );
+    assert.equal(
+      await page.eval<number>(
+        `${responsesPanel}.querySelectorAll('[data-response-interrupted]').length`,
+      ),
+      1,
+      'only the interrupted entry',
+    );
     await screenshot(page, screenshotDir, '7c-responses-parts.png');
     await pressKey(page, 'KeyR', CMD | MOD.shift);
     await page.waitFor(`!${responsesPanel}`, 'the panel closed');

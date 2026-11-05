@@ -89,6 +89,7 @@ const ResponseItem = memo(function ResponseItem({
   parts,
   prompt,
   at,
+  interrupted,
   running,
   expanded,
   onToggle,
@@ -100,6 +101,8 @@ const ResponseItem = memo(function ResponseItem({
   parts: Part[];
   prompt: string | null;
   at: string | null;
+  /** Interrupted with Esc (or a permission answered No): its text is partial. */
+  interrupted: boolean;
   /** Claude is still in this turn: no text yet isn't "no text". */
   running: boolean;
   expanded: boolean;
@@ -172,6 +175,15 @@ const ResponseItem = memo(function ResponseItem({
         >
           {prompt ? `› ${prompt.replace(/\s+/g, ' ')}` : ''}
         </span>
+        {interrupted ? (
+          <span
+            data-response-interrupted
+            className="text-xs font-medium text-fg-muted"
+            title="You interrupted Claude here; this is what it wrote before"
+          >
+            Interrupted
+          </span>
+        ) : null}
         {missing ? (
           <span className="text-xs text-fg-subtle">Not in the terminal</span>
         ) : time(at) ? (
@@ -460,6 +472,7 @@ export function ResponsesPanel({
                 parts={r.parts}
                 prompt={r.prompt}
                 at={r.at}
+                interrupted={r.interrupted}
                 running={running && r.index + 1 === newest}
                 expanded={isExpanded(r.index + 1)}
                 onToggle={toggle}

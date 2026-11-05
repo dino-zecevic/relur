@@ -82,8 +82,15 @@ describe('readResponses', () => {
         ],
         at: 't4',
         prompt: 'Fix the login bug',
+        interrupted: false,
       },
-      { text: 'You are welcome.', parts: [part('You are welcome.')], at: 't5', prompt: 'Thanks' },
+      {
+        text: 'You are welcome.',
+        parts: [part('You are welcome.')],
+        at: 't5',
+        prompt: 'Thanks',
+        interrupted: false,
+      },
     ]);
   });
 
@@ -117,6 +124,7 @@ describe('readResponses', () => {
       ],
       at: 't4',
       prompt: 'Run the tests in the background',
+      interrupted: false,
     });
     expect(second?.prompt).toBe('Thanks');
     expect(isBackgroundHandBack('<agent-message from="a1">')).toBe(true);
@@ -144,13 +152,36 @@ describe('readResponses', () => {
       ].join('\n'),
     );
     expect(readResponses(file)).toEqual([
-      { text: '', parts: [], at: 't1', prompt: 'Format the files' },
+      { text: '', parts: [], at: 't1', prompt: 'Format the files', interrupted: false },
       {
         text: 'Writing them.\n\nNotes written.',
         parts: [part('Writing them.'), part('Notes written.')],
         at: 't3',
         prompt: 'Write the notes',
+        interrupted: false,
       },
+    ]);
+  });
+
+  it('marks an entry interrupted with Esc, its partial text kept, unless Claude wrote on', () => {
+    fs.writeFileSync(
+      file,
+      [
+        user('Explain the build', { origin: { kind: 'human' }, timestamp: 't0' }),
+        assistant('The build has three steps. First', 't1'),
+        user([{ type: 'text', text: '[Request interrupted by user]' }]),
+        user('Run the tests', { origin: { kind: 'human' } }),
+        assistant([{ type: 'tool_use', name: 'Bash' }], 't2'),
+        user([{ type: 'tool_result', content: 'denied', is_error: true }]),
+        user([{ type: 'text', text: '[Request interrupted by user for tool use]' }]),
+        user('Say hi', { origin: { kind: 'human' } }),
+        assistant('Hi.', 't3'),
+      ].join('\n'),
+    );
+    expect(readResponses(file).map((r) => [r.prompt, r.text, r.interrupted])).toEqual([
+      ['Explain the build', 'The build has three steps. First', true],
+      ['Run the tests', '', true],
+      ['Say hi', 'Hi.', false],
     ]);
   });
 
@@ -187,7 +218,9 @@ describe('readResponses', () => {
   it('gives a prompt without an answer yet an empty entry, none for a missing file', () => {
     expect(readResponses(path.join(path.dirname(file), 'missing.jsonl'))).toEqual([]);
     fs.writeFileSync(file, user('Hello'));
-    expect(readResponses(file)).toEqual([{ text: '', parts: [], at: null, prompt: 'Hello' }]);
+    expect(readResponses(file)).toEqual([
+      { text: '', parts: [], at: null, prompt: 'Hello', interrupted: false },
+    ]);
   });
 });
 

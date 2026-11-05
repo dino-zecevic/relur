@@ -9,6 +9,7 @@ While it works, Claude often writes a few lines, runs tools, then writes more. T
 - **Copy** copies the whole entry, the parts separated by blank lines.
 - **Copy last part**, under an expanded entry with more than one part, copies only Claude's last message: usually its summary at the end.
 - When Claude only ran tools and wrote nothing, the entry says **No text response**.
+- When you interrupt Claude with <kbd>Esc</kbd> (or turn down a permission), the entry keeps what Claude wrote until then and says **Interrupted** next to its time.
 - The panel follows the conversation: while Claude works, the newest entry grows as each part arrives.
 - When work Claude ran in the background finishes, Claude carries on by itself. You didn't send a prompt, so what it writes then joins the same entry, under a small **After background work** label.
 - A conversation you resumed lists its earlier entries too.

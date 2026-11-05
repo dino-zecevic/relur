@@ -20,6 +20,11 @@ export interface TranscriptResponse {
   at: string | null;
   /** The prompt it answers, as shown; null when the transcript doesn't have it. */
   prompt: string | null;
+  /**
+   * Its turn was interrupted (Esc, or a permission answered No) and Claude
+   * wrote nothing after: its text is what Claude got to (spec §6.8).
+   */
+  interrupted: boolean;
 }
 
 const record = (v: unknown): Record<string, unknown> | null =>
@@ -182,6 +187,7 @@ export function readResponses(file: string): TranscriptResponse[] {
     message: string | null;
     /** A hand-back came since the last part. */
     handBack: boolean;
+    interrupted: boolean;
   } | null = null;
   const open = (prompt: string | null, at: unknown) => ({
     parts: [],
@@ -189,6 +195,7 @@ export function readResponses(file: string): TranscriptResponse[] {
     prompt,
     message: null,
     handBack: false,
+    interrupted: false,
   });
   const close = () => {
     if (current && (current.prompt !== null || current.parts.length > 0)) {
@@ -197,6 +204,7 @@ export function readResponses(file: string): TranscriptResponse[] {
         parts: current.parts,
         at: current.at,
         prompt: current.prompt,
+        interrupted: current.interrupted,
       });
     }
     current = null;
@@ -219,6 +227,7 @@ export function readResponses(file: string): TranscriptResponse[] {
       current ??= open(null, null);
       current.message = null;
       if (isHandBack(entry)) current.handBack = true;
+      if (userTexts(entry).some((t) => INTERRUPTED.test(t.trim()))) current.interrupted = true;
     } else if (entry.type === 'assistant') {
       current ??= open(null, null);
       const part = assistantText(entry).trim();
@@ -229,6 +238,8 @@ export function readResponses(file: string): TranscriptResponse[] {
       if (part && last && current.message === message) {
         last.text = `${last.text}\n\n${part}`;
       } else if (part) {
+        // Claude wrote on after an interruption (background work handing back).
+        current.interrupted = false;
         current.parts.push({ text: part, afterBackground: current.handBack });
         current.handBack = false;
         current.message = message;
