@@ -1,5 +1,7 @@
 # First steps
 
+From a fresh install to Claude at work on a task in four steps.
+
 1. **Create a profile.** On first launch {{app}} shows a welcome screen with **Create your first profile**. The wizard asks for a name, a color and which Claude account to use, then checks that Claude Code is ready. See [Creating a profile](create-profile).
 2. **Add a project.** Choose a git repository, or a folder that holds several. <kbd>{{key:addProject}}</kbd> See [Adding a project](add-project).
 3. **Create a workspace.** Type the task, for example `ENG-1423 Fix login timeout`. <kbd>{{key:newWorkspace}}</kbd> See [New workspace](new-workspace).

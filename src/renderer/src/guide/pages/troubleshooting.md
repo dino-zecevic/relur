@@ -1,5 +1,7 @@
 # Troubleshooting
 
+Common problems and what to do about them: the app or Claude not found or not starting, the wrong account, missing notifications, slow workspaces and more.
+
 {{mac}}## macOS won't open the app
 
 That happens when the app was downloaded with a browser: {{app}} isn't notarized by Apple, and macOS checks that for browser downloads. Open **System Settings › Privacy & Security**, click **Open Anyway** next to the message about {{app}}, and confirm; macOS asks only once. The install script and builds from source don't need this.

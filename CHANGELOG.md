@@ -7,6 +7,7 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 ### Added
 
 - Screenshots in the Guide: the sidebar, Home, New workspace with a task lookup, the Changes and Responses panels, the memory panel, a suspended workspace, a workflow gate, Edit profile and a workspace across repositories, each in the app's dark or light theme.
+- The Guide for the web: every release has `Relur-guide.tar.gz`, the Guide as plain Markdown for a reader on any platform, with its screenshots and an `index.json` of its sections and pages.
 
 ### Changed
 

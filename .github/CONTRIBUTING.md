@@ -33,6 +33,7 @@ A new git worktree of this repository has no `node_modules`: run `npm ci` there 
 | `scripts/linux-check.sh` | Typecheck, tests, build and the e2e tests on Linux, in Docker (`PLATFORM=linux/amd64` for x64) |
 | `scripts/linux-package.sh` | The Linux AppImage and `.deb` for this machine's architecture, built in Docker |
 | `npm run guide:screenshots` | After `npm run build`: retakes the Guide's screenshots (see below) |
+| `npm run guide:export` | The Guide as plain Markdown with `index.json` and its screenshots, in `dist/guide/` (`-- --archive` also packs it, as the release does) |
 
 Pushing a version tag runs `.github/workflows/release.yml`, which builds and publishes a GitHub Release. Packaging details are in the spec, §15.4 and §15.6.
 

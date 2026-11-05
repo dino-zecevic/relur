@@ -1,20 +1,12 @@
 // biome-ignore-all lint/suspicious/noArrayIndexKey: the Guide's static content never reorders
-import { BRAND } from '@shared/brand';
 import { matchShortcut } from '@shared/shortcuts';
-import type { StatusGlyph as Glyph } from '@shared/status';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { trpcClient } from '../trpc';
 import { iconButton, isMac, Kbd, keyHint } from '../ui/controls';
 import { StatusGlyph } from '../ui/StatusGlyph';
-import {
-  buildPages,
-  type GuidePage,
-  headings,
-  imageFiles,
-  isGuideAction,
-  pageFiles,
-  SECTIONS,
-} from './content';
+import { buildPages, type GuidePage, headings, isGuideAction, SECTIONS } from './content';
+import { imageFiles, pageFiles } from './files';
+import { GLYPHS } from './glyphs';
 import type { Block, Inline } from './markdown';
 
 /** Built once: the pages don't change while the app runs. */
@@ -38,42 +30,6 @@ export const target = (href: string): GuideTarget => {
   const [page = '', section] = href.split('#');
   return { page, section: section ?? null };
 };
-
-const GLYPHS: [Glyph, string, string, string][] = [
-  ['working', 'Working', 'Spinner', 'Claude is working, or setup is running. Nothing to do yet.'],
-  [
-    'permission',
-    'Needs permission',
-    'Amber triangle',
-    'Claude wants to run a command or edit a file and waits for your OK.',
-  ],
-  [
-    'input',
-    'Waiting for input',
-    'Pink ring',
-    'Claude asked you something and waits for your answer.',
-  ],
-  [
-    'approval',
-    'Awaiting approval',
-    'Purple diamond',
-    "Your skills stopped at a workflow gate and wait for you. The row shows the gate's name.",
-  ],
-  [
-    'done',
-    'Done, not looked at yet',
-    'Filled dot',
-    'Claude finished its turn. The dot clears when you open the workspace.',
-  ],
-  ['exited', 'Exited', 'Hollow square', 'The Claude process has ended. Start it again in its tab.'],
-  ['error', 'Error', '✕', 'Something failed: setup, or Claude could not start.'],
-  [
-    'unfinished',
-    'Unfinished',
-    'Two bars',
-    `${BRAND.displayName} closed while Claude was at work there. Open it to continue or dismiss.`,
-  ],
-];
 
 const kbdClass =
   'inline-flex h-[19px] min-w-5 items-center justify-center rounded-[4px] border border-b-2 border-line-strong bg-raised px-1.5 font-mono text-[11.5px] font-medium whitespace-nowrap text-fg';

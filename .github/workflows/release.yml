@@ -1,7 +1,7 @@
 # Builds the app on a version tag (v1.2.3) and publishes it as a GitHub
 # Release: a .zip and a .dmg for Apple Silicon and for Intel Macs, an AppImage
-# and a .deb for x64 and arm64 Linux, and one SHA256SUMS for all of them,
-# which install.sh checks. Names come from src/shared/brand.ts; the notes are
+# and a .deb for x64 and arm64 Linux, the Guide for the web as one archive,
+# and one SHA256SUMS for all of them, which install.sh checks. Names come from src/shared/brand.ts; the notes are
 # the tag's section of CHANGELOG.md.
 #
 # Nothing runs until a tag is pushed:  git tag v0.1.0 && git push origin v0.1.0
@@ -101,8 +101,39 @@ jobs:
             dist/*-linux-*.deb
           if-no-files-found: error
 
+  # The Guide as plain Markdown with index.json and its screenshots, in
+  # <displayName>-guide.tar.gz (spec §6.12). It needs no Electron, so nothing
+  # runs at install.
+  guide:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (without install scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Use the tag as the Guide's version
+        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+
+      - name: Export the Guide
+        run: npm run guide:export -- --archive
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: guide
+          path: dist/*-guide.tar.gz
+          if-no-files-found: error
+
   release:
-    needs: [macos, linux]
+    needs: [macos, linux, guide]
     runs-on: ubuntu-24.04
     # gh release create needs to write the repository's releases.
     permissions:

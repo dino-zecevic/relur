@@ -28,6 +28,7 @@
     "package": "npm run build && tsx --tsconfig tsconfig.node.json scripts/package.ts",
     "gen:install": "tsx --tsconfig tsconfig.node.json scripts/gen-install.ts",
     "install-app": "sh scripts/install-app.sh",
+    "guide:export": "tsx --tsconfig tsconfig.node.json scripts/guide-export.ts",
     "guide:screenshots": "tsx --tsconfig tsconfig.node.json scripts/guide-screenshots.ts"
   },
   "dependencies": {

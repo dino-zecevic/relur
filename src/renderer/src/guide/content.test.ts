@@ -2,15 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { formatShortcut, SHORTCUTS, shortcutsByGroup } from '@shared/shortcuts';
 import { describe, expect, it } from 'vitest';
-import {
-  buildPages,
-  fill,
-  headings,
-  imageFiles,
-  isGuideAction,
-  pageFiles,
-  SECTIONS,
-} from './content';
+import { buildPages, fill, headings, isGuideAction, SECTIONS } from './content';
+import { imageFiles, pageFiles } from './files';
 import { images, links, parsePage } from './markdown';
 
 const files = pageFiles();

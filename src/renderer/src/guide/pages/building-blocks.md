@@ -1,5 +1,7 @@
 # The three building blocks
 
+{{app}} is built from three things: profiles, projects and workspaces. Each profile has its projects, and each project its workspaces.
+
 :::diagram
 :::
 
