@@ -4,6 +4,12 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+
+- Prompt numbers in a Claude tab could sit next to a line of Claude's answer that repeated the prompt's words, for a prompt typed and pasted into. A number now goes only on the line where Claude shows the sent prompt, never on an answer or on what you're typing, and a prompt whose line can't be found for certain gets none.
+- Prompts Relur sends for you (Continue, a workflow's answer buttons, Ask Claude to write it, Create PR through Claude), and short ones such as "ok", got no number, so the prompt navigator was missing in some tabs. They are numbered like any other prompt now.
+- After a restart or a resume, the prompts Claude prints again get their numbers back, and the navigator shows; before, only prompts sent afterwards were numbered. The Responses panel no longer shows Claude's paste tags in a prompt.
+
 ## [0.4.0] - 2026-11-05
 
 ### Highlights

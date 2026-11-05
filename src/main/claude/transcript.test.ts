@@ -6,7 +6,9 @@ import {
   awaitLastResponse,
   endsWithDeniedPermission,
   isBackgroundHandBack,
+  readPrompts,
   readResponses,
+  shownPrompt,
   watchTranscript,
 } from './transcript';
 
@@ -90,6 +92,45 @@ describe('readResponses', () => {
     expect(readResponses(path.join(path.dirname(file), 'missing.jsonl'))).toEqual([]);
     fs.writeFileSync(file, user('Hello'));
     expect(readResponses(file)).toEqual([]);
+  });
+});
+
+// As Claude Code 2.1.318 writes a paste in the hook's prompt and the transcript.
+const PASTE =
+  'Context first: \n\n<pasted_content id="5780">\nReply with one word.\nLine two.\n</pasted_content id="5780">\n';
+
+describe('shownPrompt', () => {
+  it("is a prompt as Claude shows it: pasted text without Claude's tags", () => {
+    expect(shownPrompt(PASTE)).toBe('Context first: \nReply with one word.\nLine two.');
+    expect(
+      shownPrompt('\n\n<pasted_content id="1">\nOnly pasted\n</pasted_content id="1">\n'),
+    ).toBe('Only pasted');
+    expect(shownPrompt('  typed <b>as is</b> ')).toBe('typed <b>as is</b>');
+  });
+});
+
+describe('readPrompts', () => {
+  it('lists the prompts typed or pasted, oldest first, without hand-backs or commands', () => {
+    fs.writeFileSync(
+      file,
+      [
+        user('<command-name>/model</command-name>'),
+        user('AB-10247 backend: fix the login'),
+        assistant('AB-10247 backend: done', 't1'),
+        user([{ type: 'tool_result', content: 'ok' }]),
+        user('<task-notification><task-id>b1</task-id></task-notification>'),
+        user('Caveat', { isMeta: true }),
+        user(PASTE),
+        user([{ type: 'text', text: 'ok' }]),
+        'not json',
+      ].join('\n'),
+    );
+    expect(readPrompts(file)).toEqual([
+      'AB-10247 backend: fix the login',
+      'Context first: \nReply with one word.\nLine two.',
+      'ok',
+    ]);
+    expect(readPrompts(path.join(path.dirname(file), 'missing.jsonl'))).toEqual([]);
   });
 });
 

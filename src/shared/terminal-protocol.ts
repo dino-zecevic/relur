@@ -14,12 +14,14 @@ export interface TerminalPortInfo {
 
 /**
  * A point in a Claude session's output where a hook event happened (spec
- * §6.8): a prompt was submitted (with its text, if the hook said), or a
- * response ended (with its text from the transcript, which its Copy button
- * copies). Views find the text in the lines above and put an xterm marker there.
+ * §6.8): a prompt was submitted (with its text as Claude Code shows it, if the
+ * hook said), or a response ended (with its text from the transcript, which
+ * its Copy button copies). Views find the text in the lines above and put an
+ * xterm marker there. `resumed`: a prompt from before a resume, read from the
+ * transcript at SessionStart, found once Claude has reprinted the conversation.
  */
 export type TerminalMark =
-  | { kind: 'prompt'; text: string | null }
+  | { kind: 'prompt'; text: string | null; resumed?: boolean }
   | { kind: 'response'; text: string };
 
 export type TerminalServerMessage =

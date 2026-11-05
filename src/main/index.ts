@@ -13,7 +13,7 @@ import { APP_LOG_FILE, AppLog } from './app-log';
 import { HookBridge } from './bridge/server';
 import { FinishService, PR_POLL_MS } from './changes/finish';
 import { claudeSettings, writeClaudeSettings } from './claude/settings';
-import { awaitLastResponse } from './claude/transcript';
+import { awaitLastResponse, readPrompts, shownPrompt } from './claude/transcript';
 import { ConfigStore } from './config/store';
 import { openStateDb } from './db/state-db';
 import { UsageRecords } from './db/usage';
@@ -432,8 +432,10 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     // A clicked notification brings the window forward, or opens it (spec §10.3).
     statusPlatform.onClicked(() => showMainWindow());
     // Prompt markers and Copy buttons in Claude tabs (spec §6.8): each event is
-    // marked in the Claude session's output, a response with its text from the
-    // transcript once it is written there (after the Stop hook).
+    // marked in the Claude session's output, a prompt as Claude shows it, a
+    // response with its text from the transcript once it is written there
+    // (after the Stop hook). A resumed session's earlier prompts come from its
+    // transcript, to be found in Claude's reprint of the conversation.
     status.onConversation(async ({ workspaceId, event, text, transcript }) => {
       const claude = () =>
         host
@@ -443,7 +445,16 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
           );
       if (event === 'UserPromptSubmit') {
         const session = claude();
-        if (session) host.mark(session.id, { kind: 'prompt', text });
+        if (session) host.mark(session.id, { kind: 'prompt', text: text && shownPrompt(text) });
+        return;
+      }
+      if (event === 'SessionStart') {
+        const session = claude();
+        const file = transcript ?? workspaceRecords.transcriptPath(workspaceId);
+        if (!session || !file) return;
+        for (const prompt of readPrompts(file)) {
+          host.mark(session.id, { kind: 'prompt', text: prompt, resumed: true });
+        }
         return;
       }
       const file = transcript ?? workspaceRecords.transcriptPath(workspaceId);

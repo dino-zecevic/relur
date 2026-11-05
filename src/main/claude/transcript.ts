@@ -33,6 +33,16 @@ function isHandBack(entry: Record<string, unknown>): boolean {
   return isBackgroundHandBack(typeof first?.text === 'string' ? first.text : null);
 }
 
+const PASTED = /\n*<pasted_content id="[^"]*">\n?([\s\S]*?)\n?<\/pasted_content id="[^"]*">\n?/g;
+
+/**
+ * A prompt as Claude Code shows it in its terminal: pasted text, which it
+ * wraps in `<pasted_content id="…">` tags in the hook's prompt and the
+ * transcript (checked live with 2.1.318; the app sends its prompts as a
+ * paste, spec §14.1), without the tags (spec §6.8).
+ */
+export const shownPrompt = (text: string): string => text.replace(PASTED, '\n$1\n').trim();
+
 /** Whether a user entry is a prompt the user typed (not a tool result or app note). */
 function isPrompt(entry: Record<string, unknown>): boolean {
   return promptText(entry) !== null;
@@ -42,17 +52,47 @@ function isPrompt(entry: Record<string, unknown>): boolean {
 function promptText(entry: Record<string, unknown>): string | null {
   if (entry.isMeta === true) return null;
   const content = record(entry.message)?.content;
-  if (typeof content === 'string') return content.startsWith('<') ? null : content;
+  if (typeof content === 'string') {
+    const shown = shownPrompt(content);
+    return shown && !shown.startsWith('<') ? shown : null;
+  }
   if (!Array.isArray(content)) return null;
   const parts = content
     .map((part) => {
       const p = record(part);
-      return p?.type === 'text' && typeof p.text === 'string' && !p.text.startsWith('<')
-        ? p.text
-        : null;
+      const shown = p?.type === 'text' && typeof p.text === 'string' ? shownPrompt(p.text) : '';
+      return shown && !shown.startsWith('<') ? shown : null;
     })
     .filter((t) => t !== null);
   return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+/**
+ * The prompts of a session transcript the user typed (or the app sent),
+ * oldest first, as Claude Code shows them; not background hand-backs, tool
+ * results or commands. Read-only (decision D12); a missing or unreadable
+ * file gives none.
+ */
+export function readPrompts(file: string): string[] {
+  let text: string;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const prompts: string[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let entry: Record<string, unknown> | null;
+    try {
+      entry = record(JSON.parse(line));
+    } catch {
+      continue;
+    }
+    const prompt = entry?.type === 'user' && !isHandBack(entry) ? promptText(entry) : null;
+    if (prompt) prompts.push(prompt);
+  }
+  return prompts;
 }
 
 function assistantText(entry: Record<string, unknown>): string {

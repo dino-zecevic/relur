@@ -216,6 +216,15 @@ describe('StatusService', () => {
     expect(state()).toBe('done');
   });
 
+  it('tells of a resumed session, whose earlier prompts come back (spec §6.8)', () => {
+    const events: string[] = [];
+    status.onConversation((e) => events.push(`${e.event}:${e.transcript}`));
+    hook('SessionStart', { source: 'startup', transcript_path: '/t/a.jsonl' });
+    hook('SessionStart', { source: 'resume', transcript_path: '/t/a.jsonl' });
+    hook('SessionStart', { source: 'clear', transcript_path: '/t/b.jsonl' });
+    expect(events).toEqual(['SessionStart:/t/a.jsonl']);
+  });
+
   it('is Done with a note when only dev servers Claude started still run', () => {
     hook('UserPromptSubmit');
     hook('Stop', {

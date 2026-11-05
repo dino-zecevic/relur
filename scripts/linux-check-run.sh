@@ -36,3 +36,6 @@ xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-repositories.ts
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-repositories.ts --dev
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-terminals.ts
 xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-terminals.ts --dev
+# Prompt markers on their own lines, through resizes, resumes and restarts (spec §6.8).
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-markers.ts
+xvfb-run -a npx tsx --tsconfig tsconfig.node.json scripts/e2e-markers.ts --dev

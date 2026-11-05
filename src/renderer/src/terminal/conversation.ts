@@ -1,6 +1,6 @@
 import type { TerminalMark } from '@shared/terminal-protocol';
 import type { IDecoration, IDisposable, IMarker, Terminal } from '@xterm/xterm';
-import { keysOf, LineText, letters, type Needle } from './locate';
+import { keysOf, type Line, LineText, letters } from './locate';
 
 /** What the prompt navigator shows, and the display mode (spec §6.8). */
 export interface NavigatorState {
@@ -22,24 +22,22 @@ interface Mark {
 
 /** How far above the cursor a new prompt or response is looked for. */
 const SEARCH_LINES = 3000;
+/** How far above the cursor Claude's input box may begin (a draft of many lines). */
+const INPUT_LINES = 30;
 /** Quiet time after a resize before the lines are searched again (Claude reprints). */
 const SETTLE_MS = 600;
 const SETTLE_MAX_MS = 4000;
-
-const needle = (mark: TerminalMark): Needle | null =>
-  mark.kind === 'response'
-    ? { text: mark.text, at: 'end' }
-    : mark.text
-      ? { text: mark.text, at: 'start' }
-      : null;
 
 /**
  * Conversation aids of a Claude tab (spec §6.8): an xterm marker at the line
  * of each prompt and response end, a prompt number in the gutter, and a Copy
  * button at the right of the line where each response ends. Lines are found
  * by the prompt's or response's text, when the hook arrives and again after
- * a resize (Claude Code reprints the conversation then); a response that
- * can't be found gets no button. Claude Code's own output is never touched.
+ * a resize (Claude Code reprints the conversation then); a prompt only on a
+ * line where Claude Code shows a sent prompt, never in its input box. A
+ * prompt or response that can't be found gets no number or button. Prompts
+ * from before a resume come from the transcript and are found once Claude
+ * has reprinted them. Claude Code's own output is never touched.
  * In the alternate screen (full-screen renderer) none of it applies, and
  * while a replay is drawn none of it shows (D9).
  */
@@ -106,14 +104,38 @@ export class ConversationAids {
     return buffer.baseY + buffer.cursorY;
   }
 
-  /** The buffer's text lines from `from` to the cursor line. */
-  private lines(from: number): LineText {
+  /**
+   * The last line of the conversation: above Claude's input box (the
+   * full-width rule above the cursor), whose draft must never count as a
+   * prompt; the cursor line when there is none.
+   */
+  private get lastLine(): number {
     const buffer = this.term.buffer.active;
-    const lines: string[] = [];
-    for (let y = from; y <= this.cursorLine; y++) {
-      lines.push(buffer.getLine(y)?.translateToString(true) ?? '');
+    const cursor = this.cursorLine;
+    for (let y = cursor; y >= Math.max(0, cursor - INPUT_LINES); y--) {
+      const text = buffer.getLine(y)?.translateToString(true) ?? '';
+      if (text.length >= this.term.cols - 1 && /^─+$/.test(text)) return y - 1;
+    }
+    return cursor;
+  }
+
+  /** The buffer's text lines from `from` to `to` (the conversation's last line). */
+  private lines(from: number, to = this.lastLine): LineText {
+    const buffer = this.term.buffer.active;
+    const lines: Line[] = [];
+    for (let y = from; y <= to; y++) {
+      const line = buffer.getLine(y);
+      lines.push({ text: line?.translateToString(true) ?? '', wrapped: line?.isWrapped ?? false });
     }
     return new LineText(lines);
+  }
+
+  /** The line of the newest placed mark; -1 when none is. */
+  private get lastPlaced(): number {
+    for (const { marker } of [...this.marks].reverse()) {
+      if (marker && !marker.isDisposed) return marker.line;
+    }
+    return -1;
   }
 
   /** Adds a prompt or response where the output has got to (call in write order). */
@@ -121,18 +143,24 @@ export class ConversationAids {
     const entry: Mark = { mark, marker: undefined, decoration: undefined };
     this.marks.push(entry);
     // Markers belong to xterm's normal buffer; the alternate screen has none (D9).
-    if (!this.alternate) {
-      const wanted = needle(mark);
-      if (wanted) {
-        const from = Math.max(0, this.cursorLine - SEARCH_LINES);
-        const text = this.lines(from);
-        const found = text.findBefore(wanted, text.endOf(this.cursorLine - from));
+    // A prompt without its text can't be found: no marker, rather than a wrong line.
+    if (!this.alternate && mark.text) {
+      if (mark.kind === 'prompt' && mark.resumed) {
+        // From before a resume: found in Claude's reprint, in order with the others.
+        this.relocateLater();
+      } else {
+        const last = this.lastLine;
+        const from = Math.max(0, last - SEARCH_LINES);
+        const text = this.lines(from, last);
+        const before = text.endOf(last - from);
+        // A new prompt is below every placed mark (an earlier equal prompt isn't it).
+        const found =
+          mark.kind === 'prompt'
+            ? text.findPrompt(mark.text, before, this.lastPlaced - from)
+            : text.findResponse(mark.text, before);
         if (found) this.place(entry, from + found.line);
         // Not printed yet (Claude echoes a prompt after its hook): once output settles.
         else this.relocateLater();
-      } else {
-        // A prompt without its text: where the cursor is when the hook arrives.
-        this.place(entry, this.cursorLine);
       }
     }
     this.emit();
@@ -163,33 +191,37 @@ export class ConversationAids {
     );
   }
 
-  /** Whether buffer line `line` shows the start of a prompt or the end of a response. */
+  /** Whether buffer line `line` shows the prompt, or the end of the response. */
   private shows(mark: TerminalMark, line: number): boolean {
-    const wanted = needle(mark);
-    const keys = wanted ? keysOf(wanted) : [];
+    if (mark.kind === 'prompt') {
+      // A prompt's lines, as many as a long one wraps to.
+      return !!mark.text && this.lines(line, line + 40).showsPrompt(0, mark.text);
+    }
+    const keys = keysOf(mark.text);
     if (keys.length === 0) return true;
     const buffer = this.term.buffer.active;
-    const text = (from: number, to: number) => {
-      let joined = '';
-      for (let y = from; y <= to; y++) joined += buffer.getLine(y)?.translateToString(true) ?? '';
-      return letters(joined);
-    };
+    let joined = '';
     // A key spans a few lines (a list or table maybe 20); a button may sit on the blank line below.
-    const shown =
-      mark.kind === 'response' ? text(Math.max(0, line - 20), line) : text(line, line + 20);
-    return keys.some((key) =>
-      mark.kind === 'response' ? shown.endsWith(key) : shown.startsWith(key),
-    );
+    for (let y = Math.max(0, line - 20); y <= line; y++) {
+      joined += buffer.getLine(y)?.translateToString(true) ?? '';
+    }
+    const shown = letters(joined);
+    return keys.some((key) => shown.endsWith(key));
   }
 
   /** Searches the whole buffer from the bottom up, latest mark first. */
   private relocate(): void {
     if (this.alternate) return;
-    const text = this.lines(0);
-    let before = text.endOf(this.cursorLine);
+    const last = this.lastLine;
+    const text = this.lines(0, last);
+    let before = text.endOf(last);
     for (const entry of [...this.marks].reverse()) {
-      const wanted = needle(entry.mark);
-      const found = wanted ? text.findBefore(wanted, before) : null;
+      const { mark } = entry;
+      const found = !mark.text
+        ? null
+        : mark.kind === 'prompt'
+          ? text.findPrompt(mark.text, before)
+          : text.findResponse(mark.text, before);
       if (found) {
         this.place(entry, found.line);
         before = found.offset;
@@ -305,8 +337,9 @@ export class ConversationAids {
     );
     let line = mark?.marker?.line;
     if (line === undefined) {
-      const lines = this.lines(0);
-      line = lines.findBefore({ text, at: 'end' }, lines.endOf(this.cursorLine))?.line;
+      const last = this.lastLine;
+      const lines = this.lines(0, last);
+      line = lines.findResponse(text, lines.endOf(last))?.line;
     }
     if (line === undefined) return false;
     // Off the screen: the end of the response near the bottom, with its text above it.

@@ -28,7 +28,8 @@ export interface Alert {
 /** A hook event for the conversation aids in Claude tabs (spec §6.8). */
 export interface ConversationEvent {
   workspaceId: string;
-  event: 'UserPromptSubmit' | 'Stop';
+  /** SessionStart: only for a resumed session, whose earlier prompts Claude reprints. */
+  event: 'UserPromptSubmit' | 'Stop' | 'SessionStart';
   /** The prompt, or the last assistant message at Stop, when the hook says. */
   text: string | null;
   /** The session transcript, when the hook says. */
@@ -177,11 +178,24 @@ export class StatusService {
       this.records.promptSent(workspace.id, str(payload.prompt));
     }
     if (message.event === 'SessionStart') this.events.emit('sessionStart', workspace.id);
-    if ((message.event === 'UserPromptSubmit' && !handBack) || message.event === 'Stop') {
+    // A resumed session reprints its earlier prompts: their markers come back (spec §6.8).
+    const event: ConversationEvent['event'] | null =
+      (message.event === 'UserPromptSubmit' && !handBack) || message.event === 'Stop'
+        ? message.event
+        : message.event === 'SessionStart' && payload.source === 'resume'
+          ? 'SessionStart'
+          : null;
+    if (event) {
       this.events.emit('conversation', {
         workspaceId: workspace.id,
-        event: message.event,
-        text: str(message.event === 'Stop' ? payload.last_assistant_message : payload.prompt),
+        event,
+        text: str(
+          event === 'Stop'
+            ? payload.last_assistant_message
+            : event === 'UserPromptSubmit'
+              ? payload.prompt
+              : null,
+        ),
         transcript: str(payload.transcript_path),
       } satisfies ConversationEvent);
     }
