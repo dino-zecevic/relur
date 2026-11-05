@@ -176,8 +176,20 @@ exec sleep 600
         `(() => { const s = ${shownJs}; return s.title === ${JSON.stringify(name)} && s.repaints > 0 && !!document.querySelector('[data-terminal][data-connected]'); })()`,
         `${name} shown and repainted`,
       );
-      // Markers are placed once the replay's lines are found.
-      await sleep(200);
+      // Markers are placed once the replay's lines are found, which can take
+      // a while after the repaint (slower with the dev server): with `all`,
+      // wait for every one; a timeout leaves the comparison below to report.
+      if (all) {
+        const want = JSON.stringify([...expected].sort());
+        await page
+          .waitFor(
+            `JSON.stringify((${shownJs}).marks.map((m) => m.n).sort()) === ${JSON.stringify(want)}`,
+            `${name}: all its markers`,
+          )
+          .catch(() => {});
+      } else {
+        await sleep(200);
+      }
       const shown = await page.eval<Shown>(shownJs);
       assert.equal(shown.terminals, 1, `${name}: one terminal on the page`);
       terminalOf[name] ??= shown.terminal ?? '';
