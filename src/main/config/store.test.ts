@@ -19,7 +19,9 @@ const minimal = { version: 1, profiles: [{ id: 'work', name: 'Work' }] };
 
 describe('ConfigStore', () => {
   it('creates a config without profiles on first load', () => {
-    const { config, error } = new ConfigStore(file).load();
+    const store = new ConfigStore(file);
+    const { config, error } = store.load();
+    expect(store.created).toBe(true);
     expect(error).toBeNull();
     expect(config?.profiles).toEqual([]);
     expect(read()).toEqual({ version: 1, profiles: [], projects: [] });
@@ -27,7 +29,8 @@ describe('ConfigStore', () => {
 
   it('leaves an existing config file as it is on load', () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const text = `${JSON.stringify({ ...minimal, note: 'mine' }, null, 4)}\n`;
+    const profiles = [{ id: 'work', name: 'Work', suspendIdleMin: 0 }];
+    const text = `${JSON.stringify({ version: 1, profiles, note: 'mine' }, null, 4)}\n`;
     fs.writeFileSync(file, text);
     expect(new ConfigStore(file).load().config?.profiles.map((p) => p.id)).toEqual(['work']);
     expect(fs.readFileSync(file, 'utf8')).toBe(text);
@@ -44,6 +47,47 @@ describe('ConfigStore', () => {
     expect(config.profiles.map((p) => p.id)).toEqual(['work']);
     expect(read().note).toBe('mine');
     expect(read().profiles[0].unknown).toBe(1);
+  });
+
+  it('gives profiles that never chose a suspend delay the default on load (spec §9.8)', () => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    write({
+      version: 1,
+      note: 'mine',
+      profiles: [
+        { id: 'unset', name: 'Unset', unknown: 1 },
+        { id: 'cleared', name: 'Cleared', suspendIdleMin: null },
+        { id: 'off', name: 'Off', suspendIdleMin: 0 },
+        { id: 'chosen', name: 'Chosen', suspendIdleMin: 30 },
+      ],
+    });
+    const store = new ConfigStore(file);
+    const { config } = store.load();
+    expect(store.created).toBe(false);
+    expect(store.suspendDefaulted).toEqual([
+      { id: 'unset', name: 'Unset' },
+      { id: 'cleared', name: 'Cleared' },
+    ]);
+    expect(config?.profiles.map((p) => p.suspendIdleMin)).toEqual([10, 10, 0, 30]);
+    expect(read().profiles.map((p: { suspendIdleMin: number }) => p.suspendIdleMin)).toEqual([
+      10, 10, 0, 30,
+    ]);
+    expect(read().profiles[0].unknown).toBe(1);
+    expect(read().note).toBe('mine');
+    // The next start finds nothing to change.
+    const again = new ConfigStore(file);
+    again.load();
+    expect(again.suspendDefaulted).toEqual([]);
+  });
+
+  it('writes no suspend default into an invalid config', () => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const text = JSON.stringify({ version: 2, profiles: [{ id: 'work', name: 'Work' }] });
+    fs.writeFileSync(file, text);
+    const store = new ConfigStore(file);
+    expect(store.load().error).not.toBeNull();
+    expect(store.suspendDefaulted).toEqual([]);
+    expect(fs.readFileSync(file, 'utf8')).toBe(text);
   });
 
   it('converts #rrggbb profile colors to palette names on load, keeping other fields', () => {

@@ -9,7 +9,7 @@ import {
 } from '@shared/profiles';
 import { type Profile, ProfileSchema, type Sounds } from '@shared/schemas';
 import { accountFolder } from '@shared/setup';
-import type { SuspendChoice } from '@shared/suspend';
+import { DEFAULT_SUSPEND_MIN, type SuspendSetting } from '@shared/suspend';
 import { DEFAULT_RESUME_PROMPT } from '@shared/unfinished';
 import type { ConfigStore } from '../config/store';
 import { buildProcessEnv } from '../env/build-env';
@@ -107,6 +107,8 @@ export class ProfileService {
         name,
         color: input.color,
         env: folder ? { CLAUDE_CONFIG_DIR: folder } : {},
+        // Written, so the start never counts it as a profile from before (spec §9.8).
+        suspendIdleMin: DEFAULT_SUSPEND_MIN,
       });
     });
     return config.profiles.find((p) => p.id === id) as Profile;
@@ -132,8 +134,8 @@ export class ProfileService {
       pr?: { createCommand: string; statusCommand: string };
       /** Continue interrupted work at start (spec §9.7); the default prompt isn't written. */
       resume?: { continueAtStart: boolean; prompt: string };
-      /** Suspend idle sessions after this many minutes, null for off (spec §9.8). */
-      suspendIdleMin?: SuspendChoice | null;
+      /** Suspend idle sessions after this many minutes, 0 for Off (spec §9.8). */
+      suspendIdleMin?: SuspendSetting;
     },
   ): Profile {
     const name = changes.name.trim();
@@ -180,16 +182,12 @@ export class ProfileService {
       (resume.continueAtStart !== current.resume.continueAtStart ||
         resume.prompt !== (current.resume.prompt ?? null));
     const suspendChanged =
-      changes.suspendIdleMin !== undefined &&
-      changes.suspendIdleMin !== (current.suspendIdleMin ?? null);
+      changes.suspendIdleMin !== undefined && changes.suspendIdleMin !== current.suspendIdleMin;
     const config = this.config.update((raw) => {
       const entry = this.rawProfile(raw.profiles, profileId);
       entry.name = name;
-      if (suspendChanged) {
-        // Off is the default and isn't written.
-        if (changes.suspendIdleMin) entry.suspendIdleMin = changes.suspendIdleMin;
-        else delete entry.suspendIdleMin;
-      }
+      // Off is written as 0, so it stays apart from a profile that never chose.
+      if (suspendChanged) entry.suspendIdleMin = changes.suspendIdleMin;
       if (resumeChanged && resume) {
         // Off and the default prompt aren't written.
         const fields: Record<string, unknown> = {};

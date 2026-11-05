@@ -4,6 +4,7 @@
   "quit",
   "continue",
   "suspend",
+  "suspend-notice",
   "notifications",
   "home",
   "updates",

@@ -1,3 +1,4 @@
+import { BRAND } from './brand';
 import type { WorkspaceState } from './status';
 
 /**
@@ -5,9 +6,39 @@ import type { WorkspaceState } from './status';
  * may be suspended, and the profile's choices.
  */
 
-/** Edit profile › General's choices, in minutes; off is no value. */
+/** Edit profile › General's choices, in minutes. */
 export const SUSPEND_CHOICES = [5, 10, 30] as const;
 export type SuspendChoice = (typeof SUSPEND_CHOICES)[number];
+
+/** What `suspendIdleMin` stores: a choice, or 0 for an explicit Off (spec §9.8). */
+export type SuspendSetting = 0 | SuspendChoice;
+
+/** The delay of a profile that never chose one: new profiles and those from before. */
+export const DEFAULT_SUSPEND_MIN = 10 satisfies SuspendChoice;
+
+/**
+ * A profile's delay in minutes, or null when suspension is off: 0 is Off,
+ * and a profile that never chose gets the default (spec §9.8).
+ */
+export function suspendDelay(profile: {
+  suspendIdleMin?: SuspendSetting | null;
+}): SuspendChoice | null {
+  const stored = profile.suspendIdleMin;
+  if (stored === 0) return null;
+  return stored ?? DEFAULT_SUSPEND_MIN;
+}
+
+/**
+ * The one-time notice after the update that turned suspension on by default
+ * (spec §9.8), naming the profiles it changed when there are several.
+ */
+export function suspendDefaultNotice(profiles: readonly string[]): string {
+  const text = `${BRAND.displayName} now suspends Claude sessions you haven't used for ${DEFAULT_SUSPEND_MIN} minutes, to save memory. They resume when you open them.`;
+  return profiles.length > 1 ? `${text} Profiles: ${listOf(profiles)}.` : text;
+}
+
+const listOf = (names: readonly string[]) =>
+  names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? '');
 
 /** The mark's tooltip on the sidebar row, in the Workspaces table and on a tab (spec §9.8). */
 export const SUSPENDED_TOOLTIP = 'Suspended to save memory; resumes when you open it';

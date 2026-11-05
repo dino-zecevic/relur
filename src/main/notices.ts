@@ -6,7 +6,10 @@ import path from 'node:path';
  * config dir: `{ "<id>": "<when it was shown>" }`. A file of its own rather
  * than state.db, so recording one never changes the database's schema.
  */
-export type NoticeId = 'window-closed';
+export type NoticeId =
+  | 'window-closed'
+  /** Suspending idle sessions turned on by default (spec §9.8). */
+  | 'suspend-default';
 
 const FILE = 'notices.json';
 

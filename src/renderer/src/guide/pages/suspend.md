@@ -2,9 +2,11 @@
 
 Every Claude session holds memory: Claude Code itself, its MCP servers and the shells of its tools. With many workspaces open, most of them just wait. {{app}} can stop Claude in a workspace you haven't looked at for a while and start it again, with the same conversation, as soon as you open it.
 
-## Turning it on
+## The setting
 
-In [Edit profile](edit-profile) › General, choose **Suspend idle sessions**: **Off** (the default), or after **5**, **10** or **30 minutes**. It applies to the profile's workspaces and to Claude started with [Start Claude here](start-claude-here).
+It's on for every profile: Claude is suspended after **10 minutes**. In [Edit profile](edit-profile) › General, **Suspend idle sessions** changes that to **5** or **30 minutes**, or turns it **Off**. It applies to the profile's workspaces and to Claude started with [Start Claude here](start-claude-here).
+
+In earlier versions it was off unless you turned it on. Profiles that never changed the setting get 10 minutes after the update, and {{app}} says so once, in a bar at the top of the window: **Settings** opens Edit profile for the profile you're looking at, **OK** closes the bar. A profile where you chose a time, or Off, keeps it.
 
 ## When Claude is suspended
 
@@ -64,4 +66,4 @@ In the project view's **Workspaces** table, hover a workspace's status. While it
 
 ## When {{app}} starts
 
-With the setting on, {{app}} doesn't start Claude in every workspace where it was running. It starts only the workspace you're looking at and those whose interrupted work it [continues](resume#continuing-it); the others start suspended and resume when you open them. With the setting off, every one starts, as before.
+With the setting on, {{app}} doesn't start Claude in every workspace where it was running. It starts only the workspace you're looking at and those whose interrupted work it [continues](resume#continuing-it); the others start suspended and resume when you open them. With the setting Off, every one starts.

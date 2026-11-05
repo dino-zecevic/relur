@@ -161,7 +161,10 @@ async function main() {
       assert.equal(command, 'brew install --cask claude-code');
     assert.equal(await rowState(page, 'Signed in'), 'wait');
     await screenshot(page, screenshotDir, 'o2-not-installed.png');
-    assert.deepEqual(profiles(), [{ id: 'work', name: 'Work', color: 'blue', env: {} }]);
+    // A new profile gets the default suspend delay written (spec §9.8).
+    assert.deepEqual(profiles(), [
+      { id: 'work', name: 'Work', color: 'blue', env: {}, suspendIdleMin: 10 },
+    ]);
     await clickButtonText(page, 'Finish later', `document.querySelector('dialog[open]')`);
     await page.waitFor(`${dialogText}.includes('Open Work')`, 'the done step');
     assert.doesNotMatch(await page.eval<string>(dialogText), /Terminal shortcut/);
@@ -171,6 +174,8 @@ async function main() {
       `document.querySelector('[data-setup-warning]')?.textContent.includes('claude not found')`,
       'the status bar warning',
     );
+    // A new install never shows the notice that suspension is on by default (spec §9.8).
+    assert.equal(await page.eval(`!!document.querySelector('[data-suspend-notice]')`), false);
     await app.stop();
     app = undefined;
 
@@ -273,6 +278,7 @@ async function main() {
       name: 'Personal',
       color: 'sky',
       env: { CLAUDE_CONFIG_DIR: '~/.claude-side' },
+      suspendIdleMin: 10,
     });
 
     // 4. New account: creates an empty ~/.claude-<id>; Finish later leaves it gated.
@@ -381,6 +387,7 @@ async function main() {
       name: 'Side',
       color: 'olive',
       env: { CLAUDE_CONFIG_DIR: '~/.claude-third' },
+      suspendIdleMin: 10,
       pr: { createCommand: 'gh pr create --fill' },
     });
 

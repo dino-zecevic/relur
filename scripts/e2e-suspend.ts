@@ -307,7 +307,7 @@ done
     await typeInTerminal(page, 'done');
     await waitState(page, 'Echo', 'Done');
 
-    // The setting: Edit profile › General, off by default; 5 minutes is written.
+    // The setting: Edit profile › General, Off as seeded; 5 minutes is written.
     await chooseFromNextContextMenu(running.main, 'Edit profile…');
     await openContextMenu(page, '[aria-label="Select Work"]');
     await page.waitFor(`!!document.querySelector('dialog[open] #edit-profile-suspend')`, 'Edit');

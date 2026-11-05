@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { BRAND, envVar } from '@shared/brand';
+import { suspendDelay } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import { planLimitReached } from '@shared/unfinished';
 import { LATEST_RELEASE_URL } from '@shared/updates';
@@ -47,6 +48,7 @@ import { SetupService } from './setup/service';
 import { SkillService } from './skills/service';
 import { ElectronStatusPlatform } from './status/electron';
 import { StatusService } from './status/service';
+import { SuspendDefaultNotice } from './suspend/notice';
 import { SuspendService } from './suspend/service';
 import { serveTrpcOverIpc } from './trpc/electron';
 import { UnfinishedService } from './unfinished/service';
@@ -346,6 +348,11 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     config.load();
     appConfig = config;
     appDataDir = dataDir;
+    // Suspension became on by default: a notice, once, for profiles that got it (spec §9.8).
+    const suspendNotice = new SuspendDefaultNotice(dataDir, {
+      created: config.created,
+      defaulted: config.suspendDefaulted,
+    });
     const db = openStateDb(path.join(dataDir, 'state.db'));
     closeDatabase = () => db.close();
     env = new EnvService(config);
@@ -586,8 +593,10 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     const platform = statusPlatform;
     const suspend = new SuspendService({
       host,
-      delayMin: (profileId) =>
-        config.get().config?.profiles.find((p) => p.id === profileId)?.suspendIdleMin ?? null,
+      delayMin: (profileId) => {
+        const profile = config.get().config?.profiles.find((p) => p.id === profileId);
+        return profile ? suspendDelay(profile) : null;
+      },
       workspace: (workspaceId) => workspaceRecords.get(workspaceId),
       mainCheckoutKept: (projectId) => workspaceRecords.keptMainCheckouts().includes(projectId),
       shown: () => platform.shown(),
@@ -608,8 +617,10 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     bridge.onHook((message) => suspend.handleHook(message));
     bridge.onStatusLine((message) => suspend.handleStatusLine(message));
     terminals.wake = (info) => suspend.wake(info);
-    workspaces.suspendAtStart = (profileId) =>
-      config.get().config?.profiles.find((p) => p.id === profileId)?.suspendIdleMin != null;
+    workspaces.suspendAtStart = (profileId) => {
+      const profile = config.get().config?.profiles.find((p) => p.id === profileId);
+      return profile ? suspendDelay(profile) !== null : false;
+    };
     workspaces.restoreArgs = (sessionId) => suspend.restoreArgs(sessionId);
     platform.onShown(() => suspend.checkShown());
     suspend.start();
@@ -687,6 +698,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       usage,
       memory: monitor,
       suspend,
+      suspendNotice,
       status,
       statusPlatform,
       setup,

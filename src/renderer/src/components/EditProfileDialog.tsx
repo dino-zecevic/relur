@@ -3,7 +3,12 @@ import type { ProfileColor } from '@shared/profile-colors';
 import type { Profile } from '@shared/schemas';
 import { accountFolder, setupPassed, setupWarning } from '@shared/setup';
 import { SOUND_EVENTS } from '@shared/status';
-import { SUSPEND_CHOICES, type SuspendChoice } from '@shared/suspend';
+import {
+  SUSPEND_CHOICES,
+  type SuspendChoice,
+  type SuspendSetting,
+  suspendDelay,
+} from '@shared/suspend';
 import { resumePrompt } from '@shared/unfinished';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
@@ -59,9 +64,8 @@ export function EditProfileDialog({
   const [doNotDisturb, setDoNotDisturb] = useState(profile.alerts.doNotDisturb);
   const [continueAtStart, setContinueAtStart] = useState(profile.resume.continueAtStart);
   const [continuePrompt, setContinuePrompt] = useState(resumePrompt(profile.resume));
-  const [suspendIdleMin, setSuspendIdleMin] = useState<SuspendChoice | null>(
-    profile.suspendIdleMin ?? null,
-  );
+  // A profile that never chose shows the default (spec §9.8).
+  const [suspendIdleMin, setSuspendIdleMin] = useState<SuspendSetting>(suspendDelay(profile) ?? 0);
   const [statusLine, setStatusLine] = useState(profile.claude.statusLine ?? '');
   const [askBeforeLink, setAskBeforeLink] = useState(profile.claude.askBeforeLink);
   const [editor, setEditor] = useState<EditorDraft>(draftOf(profile.editor));
@@ -354,10 +358,10 @@ export function EditProfileDialog({
               <select
                 id="edit-profile-suspend"
                 className={`${inputClass} w-auto`}
-                value={suspendIdleMin ?? 'off'}
+                value={suspendIdleMin || 'off'}
                 onChange={(e) =>
                   setSuspendIdleMin(
-                    e.target.value === 'off' ? null : (Number(e.target.value) as SuspendChoice),
+                    e.target.value === 'off' ? 0 : (Number(e.target.value) as SuspendChoice),
                   )
                 }
               >

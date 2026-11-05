@@ -43,6 +43,7 @@ import type { SetupService } from '../setup/service';
 import type { SkillService } from '../skills/service';
 import type { ElectronStatusPlatform } from '../status/electron';
 import type { Alert, ConversationEvent, StatusService } from '../status/service';
+import type { SuspendDefaultNotice } from '../suspend/notice';
 import type { SuspendService } from '../suspend/service';
 import type { UnfinishedService } from '../unfinished/service';
 import type { UpdateAction } from '../updates/install';
@@ -79,6 +80,8 @@ export interface Services {
   memory: MemoryMonitor;
   /** Suspending idle sessions (spec §9.8). */
   suspend: SuspendService;
+  /** The one-time notice that suspension is on by default (spec §9.8). */
+  suspendNotice: SuspendDefaultNotice;
   /** Menu items the renderer answers with a dialog. */
   menuRequests: EventEmitter;
   /** Report a Bug… and Request a Feature… (spec §6.12), also from the Guide. */
@@ -122,6 +125,7 @@ export function createAppRouter({
   usage,
   memory,
   suspend,
+  suspendNotice,
   menuRequests,
   feedback,
   helper,
@@ -168,6 +172,12 @@ export function createAppRouter({
       answerCloseNotice: publicProcedure
         .input(z.object({ close: z.boolean() }))
         .mutation(({ input }) => closeNotice.answer(input.close)),
+      /**
+       * Suspension turned on by default: the profiles the start gave the
+       * default, or null when there is no notice (spec §9.8).
+       */
+      suspendNotice: publicProcedure.query(() => suspendNotice.get()),
+      dismissSuspendNotice: publicProcedure.mutation(() => suspendNotice.dismiss()),
       /** The OS appearance; the renderer sets data-theme from it. */
       theme: publicProcedure.query(() => ({ dark: nativeTheme.shouldUseDarkColors })),
       themeChanges: publicProcedure.subscription(({ signal }) =>
@@ -503,9 +513,9 @@ export function createAppRouter({
             resume: z
               .object({ continueAtStart: z.boolean(), prompt: z.string().max(4000) })
               .optional(),
+            /** 0 is an explicit Off (spec §9.8). */
             suspendIdleMin: z
-              .union([z.literal(5), z.literal(10), z.literal(30)])
-              .nullable()
+              .union([z.literal(0), z.literal(5), z.literal(10), z.literal(30)])
               .optional(),
           }),
         )

@@ -205,10 +205,11 @@ const ProfileObjectSchema = z.object({
     })
     .prefault({}),
   /**
-   * Spec §9.8: suspend idle Claude sessions after this many minutes; unset is
-   * off (the default, not written).
+   * Spec §9.8: suspend idle Claude sessions after this many minutes, 0 for
+   * Off. Unset means never chosen: the default, 10, which the app writes at
+   * start (`suspendDelay` reads it).
    */
-  suspendIdleMin: z.union([z.literal(5), z.literal(10), z.literal(30)]).nullish(),
+  suspendIdleMin: z.union([z.literal(0), z.literal(5), z.literal(10), z.literal(30)]).nullish(),
 });
 export const ProfileSchema = z.preprocess(
   (raw: z.input<typeof ProfileObjectSchema>) => liftLookup(raw),

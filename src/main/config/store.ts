@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { toProfileColor } from '@shared/profile-colors';
 import { type Config, ConfigSchema } from '@shared/schemas';
+import { DEFAULT_SUSPEND_MIN } from '@shared/suspend';
 import { z } from 'zod';
 
 export interface ConfigSnapshot {
@@ -16,7 +17,7 @@ export interface ConfigSnapshot {
 /** A new install's config.json; the New profile wizard adds the first profile. */
 const EMPTY_CONFIG = { version: 1, profiles: [], projects: [] };
 
-type RawConfig = Record<string, unknown> & { projects?: unknown[] };
+export type RawConfig = Record<string, unknown> & { projects?: unknown[] };
 
 function describe(error: unknown): string {
   if (error instanceof z.ZodError) return z.prettifyError(error);
@@ -35,9 +36,37 @@ function writeAtomic(file: string, data: unknown): void {
  * by the app go through `update`, which edits the raw JSON so fields the app
  * doesn't know about (later milestones, user notes) are kept.
  */
+/** A profile `load` gave the default suspend delay (spec §9.8). */
+export interface DefaultedProfile {
+  id: string;
+  name: string;
+}
+
+/**
+ * Gives every profile that never chose a suspend delay the default, 10
+ * minutes (spec §9.8); an explicit Off (0) and a chosen delay stay. Returns
+ * the profiles it changed.
+ */
+export function defaultSuspendIdle(raw: RawConfig): DefaultedProfile[] {
+  if (!Array.isArray(raw.profiles)) return [];
+  const changed: DefaultedProfile[] = [];
+  for (const profile of raw.profiles as unknown[]) {
+    if (profile === null || typeof profile !== 'object') continue;
+    const entry = profile as Record<string, unknown>;
+    if (entry.suspendIdleMin !== undefined && entry.suspendIdleMin !== null) continue;
+    entry.suspendIdleMin = DEFAULT_SUSPEND_MIN;
+    changed.push({ id: String(entry.id), name: String(entry.name) });
+  }
+  return changed;
+}
+
 export class ConfigStore {
   private snapshot: ConfigSnapshot;
   private readonly events = new EventEmitter();
+  /** `load` created the file: a new install (spec §3.4). */
+  created = false;
+  /** The profiles `load` gave the default suspend delay (spec §9.8). */
+  suspendDefaulted: DefaultedProfile[] = [];
 
   constructor(readonly file: string) {
     this.snapshot = { file, config: null, error: null };
@@ -48,9 +77,29 @@ export class ConfigStore {
     if (!fs.existsSync(this.file)) {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       writeAtomic(this.file, EMPTY_CONFIG);
+      this.created = true;
     }
     this.convertHexColors();
+    this.writeSuspendDefault();
     return this.reload();
+  }
+
+  /**
+   * Profiles from before suspension was on by default, and those added by
+   * hand without the field, get the default written (spec §9.8). Only when
+   * the result is valid: an invalid file is reported by reload().
+   */
+  private writeSuspendDefault(): void {
+    try {
+      const raw = this.readRaw();
+      const changed = defaultSuspendIdle(raw);
+      if (changed.length === 0) return;
+      ConfigSchema.parse(raw);
+      writeAtomic(this.file, raw);
+      this.suspendDefaulted = changed;
+    } catch {
+      // An unreadable or invalid file is reported by reload().
+    }
   }
 
   /** Profile colors were `#rrggbb` before the palette; store the nearest name instead. */

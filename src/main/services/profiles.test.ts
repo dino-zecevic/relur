@@ -102,14 +102,22 @@ describe('ProfileService', () => {
     });
 
     expect([a.id, b.id, c.id]).toEqual(['default', 'work', 'side-project']);
+    // The suspend delay is written: the default, as chosen (spec §9.8).
     expect(read().profiles).toEqual([
-      { id: 'default', name: 'Default', color: 'blue', env: {} },
-      { id: 'work', name: 'Work', color: 'teal', env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } },
+      { id: 'default', name: 'Default', color: 'blue', env: {}, suspendIdleMin: 10 },
+      {
+        id: 'work',
+        name: 'Work',
+        color: 'teal',
+        env: { CLAUDE_CONFIG_DIR: '~/.claude-work' },
+        suspendIdleMin: 10,
+      },
       {
         id: 'side-project',
         name: 'Side project',
         color: 'green',
         env: { CLAUDE_CONFIG_DIR: '~/.claude-side-project' },
+        suspendIdleMin: 10,
       },
     ]);
     expect(read().note).toBe('mine');
@@ -166,7 +174,13 @@ describe('ProfileService', () => {
     expect(order()).toEqual(['a', 'c', 'b']);
     profiles.move('a', 99);
     expect(order()).toEqual(['c', 'b', 'a']);
-    expect(read().profiles[2]).toEqual({ id: 'a', name: 'A', color: 'blue', env: {} });
+    expect(read().profiles[2]).toEqual({
+      id: 'a',
+      name: 'A',
+      color: 'blue',
+      env: {},
+      suspendIdleMin: 10,
+    });
     expect(() => profiles.move('nope', 0)).toThrow(/Unknown profile/);
   });
 
@@ -187,7 +201,13 @@ describe('ProfileService', () => {
       alerts: { sounds: off, doNotDisturb: false },
       statusLine: '',
     });
-    expect(read().profiles[0]).toEqual({ id: 'work', name: 'Work', color: 'blue', env: {} });
+    expect(read().profiles[0]).toEqual({
+      id: 'work',
+      name: 'Work',
+      color: 'blue',
+      env: {},
+      suspendIdleMin: 10,
+    });
     // The old single switch isn't carried over, and goes once sounds are set.
     config.update((raw) => {
       (raw.profiles as { alerts?: unknown }[])[0] = {
@@ -218,6 +238,19 @@ describe('ProfileService', () => {
     expect(read().profiles[0]).toMatchObject({ claude: { askBeforeLink: false } });
     profiles.update('work', { name: 'Work', color: 'blue', askBeforeLink: true });
     expect(read().profiles[0]).not.toHaveProperty('claude');
+  });
+
+  it('writes the suspend delay, and Off as 0 (spec §9.8)', async () => {
+    await profiles.create({ name: 'Work', color: 'blue', account: { kind: 'default' } });
+    const update = (suspendIdleMin: 0 | 5 | 10 | 30) =>
+      profiles.update('work', { name: 'Work', color: 'blue', suspendIdleMin });
+    update(0);
+    expect(read().profiles[0].suspendIdleMin).toBe(0);
+    update(30);
+    expect(read().profiles[0].suspendIdleMin).toBe(30);
+    // Left out, it stays as it is.
+    profiles.update('work', { name: 'Work', color: 'blue' });
+    expect(read().profiles[0].suspendIdleMin).toBe(30);
   });
 
   it('keeps the commit identity: both fields or none (spec §3.1)', async () => {

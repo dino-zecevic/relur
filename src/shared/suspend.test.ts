@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { BRAND } from './brand';
 import type { WorkspaceState } from './status';
 import {
   draftAfter,
   type SuspendFacts,
   suspendBlocker,
   suspendClockNote,
+  suspendDefaultNotice,
+  suspendDelay,
   suspendDue,
   suspendedNote,
   typesText,
@@ -166,5 +169,25 @@ describe('draftAfter', () => {
     expect(draftAfter(true, '\x1b\r')).toBe(true);
     expect(draftAfter(false, '\x1b[200~line one\rline two\x1b[201~')).toBe(true);
     expect(draftAfter(false, '\x1b[200~\x1b[201~')).toBe(false);
+  });
+});
+
+describe('suspendDelay (spec §9.8)', () => {
+  it('reads a profile that never chose as the default, 0 as Off and a number as it is', () => {
+    expect(suspendDelay({})).toBe(10);
+    expect(suspendDelay({ suspendIdleMin: null })).toBe(10);
+    expect(suspendDelay({ suspendIdleMin: 0 })).toBeNull();
+    expect(suspendDelay({ suspendIdleMin: 5 })).toBe(5);
+    expect(suspendDelay({ suspendIdleMin: 30 })).toBe(30);
+  });
+});
+
+describe('suspendDefaultNotice (spec §9.8)', () => {
+  const text = `${BRAND.displayName} now suspends Claude sessions you haven't used for 10 minutes, to save memory. They resume when you open them.`;
+
+  it('names the profiles only when there are several', () => {
+    expect(suspendDefaultNotice(['Work'])).toBe(text);
+    expect(suspendDefaultNotice(['Work', 'Personal'])).toBe(`${text} Profiles: Work and Personal.`);
+    expect(suspendDefaultNotice(['A', 'B', 'C'])).toBe(`${text} Profiles: A, B and C.`);
   });
 });
