@@ -292,6 +292,20 @@ while IFS= read -r line; do
     unseen)
       printf '%s\\n' '{"type":"user","message":{"role":"user","content":"And now?"}}' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Quiet **two**."}]},"timestamp":"2026-10-28T12:01:00Z"}' >> "$HOME/transcript-$n.jsonl"
       hook Stop '{"last_assistant_message":"Quiet **two**."}' ;;
+    # A turn with tool work between Claude's messages (spec §6.8): one entry, three parts.
+    parts)
+      printf '%s\\n' '{"type":"user","message":{"role":"user","content":"Tidy the README"},"origin":{"kind":"human"}}' >> "$HOME/transcript-$n.jsonl"
+      printf '\\342\\235\\257 Tidy the README\\n'
+      hook UserPromptSubmit '{"prompt":"Tidy the README"}'
+      printf '%s\\n' '{"type":"assistant","message":{"id":"p1","role":"assistant","content":[{"type":"text","text":"Reading it first."}]},"timestamp":"2026-10-28T12:03:00Z"}' '{"type":"assistant","message":{"id":"p1","role":"assistant","content":[{"type":"tool_use","name":"Read"}]},"timestamp":"2026-10-28T12:03:00Z"}' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}' '{"type":"assistant","message":{"id":"p2","role":"assistant","content":[{"type":"text","text":"Fixed the **links**."},{"type":"tool_use","name":"Edit"}]},"timestamp":"2026-10-28T12:04:00Z"}' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}' '{"type":"assistant","message":{"id":"p3","role":"assistant","content":[{"type":"text","text":"Done: two fixes."}]},"timestamp":"2026-10-28T12:05:00Z"}' >> "$HOME/transcript-$n.jsonl"
+      printf '\\342\\217\\272 Done: two fixes.\\n\\n'
+      hook Stop '{"last_assistant_message":"Done: two fixes."}' ;;
+    # A turn with tool work only: no text.
+    notext)
+      printf '%s\\n' '{"type":"user","message":{"role":"user","content":"Format the files"},"origin":{"kind":"human"}}' '{"type":"assistant","message":{"id":"q1","role":"assistant","content":[{"type":"tool_use","name":"Bash"}]},"timestamp":"2026-10-28T12:02:30Z"}' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}' >> "$HOME/transcript-$n.jsonl"
+      printf '\\342\\235\\257 Format the files\\n'
+      hook UserPromptSubmit '{"prompt":"Format the files"}'
+      hook Stop '{}' ;;
     # Claude's full-screen renderer draws in the alternate screen; classic leaves it.
     fullscreen) printf '\\033[?1049h\\033[HFull screen\\n' ;;
     classic) printf '\\033[?1049l' ;;
@@ -793,7 +807,7 @@ exec sleep 600
     await pressKey(page, 'KeyR', CMD | MOD.shift);
     await page.waitFor(`${panelResponses} === 1`, 'the Responses panel');
     assert.equal(
-      await page.eval<string>(`${responsesPanel}.querySelector('[data-response-body]').innerHTML`),
+      await page.eval<string>(`${responsesPanel}.querySelector('[data-response-part]').innerHTML`),
       '<p>Answer <strong>one</strong>.</p>\n',
     );
     const first = await page.eval<string>(
@@ -959,6 +973,56 @@ exec sleep 600
       'the terminal fits',
     );
 
+    // One entry per prompt (spec §6.8): Claude's messages between tool calls
+    // are its parts, with a divider between them. Copy takes all of them,
+    // Copy last part the last one, ⌥C the whole latest entry; a turn of tool
+    // work alone says so.
+    await typeInTerminal(page, 'notext');
+    await typeInTerminal(page, 'parts');
+    await pressKey(page, 'KeyR', CMD | MOD.shift);
+    const entry = (n: number) => `${responsesPanel}.querySelector('[data-response="${n}"]')`;
+    await page.waitFor(
+      `${panelResponses} === 5 && ${entry(5)}.querySelectorAll('[data-response-part]').length === 3`,
+      'the entry with three parts',
+    );
+    assert.equal(
+      await page.eval<number>(`${entry(5)}.querySelectorAll('[data-response-divider]').length`),
+      2,
+    );
+    assert.match(
+      await page.eval<string>(`${entry(5)}.querySelector('[data-response-header]').innerText`),
+      /› Tidy the README/,
+    );
+    assert.match(
+      await page.eval<string>(`${entry(4)}.innerText`),
+      /› Format the files[\s\S]*No text response/,
+    );
+    assert.equal(
+      await page.eval<boolean>(`!!${entry(4)}.querySelector('[data-response-copy]')`),
+      false,
+      'nothing to copy',
+    );
+    const copiedBefore = await mainProcess.eval<number>('globalThis.__copied.length');
+    await page.eval(`${entry(5)}.querySelector('[data-response-copy]').click()`);
+    await mainProcess.waitFor(`globalThis.__copied.length === ${copiedBefore + 1}`, 'Copy');
+    await page.eval(`${entry(5)}.querySelector('[data-response-copy-last]').click()`);
+    await mainProcess.waitFor(
+      `globalThis.__copied.length === ${copiedBefore + 2}`,
+      'Copy last part',
+    );
+    await page.eval(`${responsesPanel}.focus()`);
+    await pressKey(page, 'KeyC', MOD.alt);
+    await mainProcess.waitFor(`globalThis.__copied.length === ${copiedBefore + 3}`, '⌥C');
+    const whole = 'Reading it first.\n\nFixed the **links**.\n\nDone: two fixes.';
+    assert.deepEqual((await mainProcess.eval<string[]>('globalThis.__copied')).slice(-3), [
+      whole,
+      'Done: two fixes.',
+      whole,
+    ]);
+    await screenshot(page, screenshotDir, '7c-responses-parts.png');
+    await pressKey(page, 'KeyR', CMD | MOD.shift);
+    await page.waitFor(`!${responsesPanel}`, 'the panel closed');
+
     // Plan usage from the status line (spec §11).
     assert.match(
       await page.eval<string>(`document.querySelector('footer').innerText`),
@@ -1071,11 +1135,18 @@ exec sleep 600
       `[...document.querySelectorAll('[data-responses-panel] [data-response]')].at(-1)?.innerText.includes('The command finished.')`,
       'the response after the hand-back',
     );
+    // It joins the entry of the prompt before it, under a label.
     assert.match(
       await page.eval<string>(
         `[...document.querySelectorAll('[data-responses-panel] [data-response-header]')].at(-1).innerText`,
       ),
-      /After background work/,
+      /› Fix the login/,
+    );
+    assert.equal(
+      await page.eval<string>(
+        `[...document.querySelectorAll('[data-responses-panel] [data-response]')].at(-1).querySelector('[data-response-handback]')?.innerText`,
+      ),
+      'After background work',
     );
     assert.equal(
       await page.eval<boolean>(

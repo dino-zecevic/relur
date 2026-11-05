@@ -25,40 +25,69 @@ const assistant = (content: unknown, timestamp: string) =>
   line({ type: 'assistant', message: { role: 'assistant', content }, timestamp });
 
 describe('readResponses', () => {
-  it('groups the assistant text after each prompt, without tool calls and results', () => {
+  const part = (text: string, afterBackground = false) => ({ text, afterBackground });
+
+  it("gives one entry per prompt, each of Claude's messages a part, without tool calls", () => {
     fs.writeFileSync(
       file,
       [
         line({ type: 'summary', summary: 'x' }),
         user('<command-name>/clear</command-name>', { isMeta: true }),
-        user('Fix the login bug'),
-        assistant(
-          [
-            { type: 'text', text: 'Looking at it.' },
-            { type: 'tool_use', name: 'Bash' },
-          ],
-          't1',
-        ),
+        user('Fix the login bug', { origin: { kind: 'human' }, timestamp: 't0' }),
+        // Claude Code writes a message's blocks as entries of their own.
+        line({
+          type: 'assistant',
+          message: { id: 'm1', content: [{ type: 'thinking', thinking: '…' }] },
+          timestamp: 't1',
+        }),
+        line({
+          type: 'assistant',
+          message: { id: 'm1', content: [{ type: 'text', text: 'Looking at it.' }] },
+          timestamp: 't1',
+        }),
+        line({
+          type: 'assistant',
+          message: { id: 'm1', content: [{ type: 'text', text: 'First the tests.' }] },
+          timestamp: 't1',
+        }),
+        line({
+          type: 'assistant',
+          message: { id: 'm1', content: [{ type: 'tool_use', name: 'Bash' }] },
+          timestamp: 't1',
+        }),
         user([{ type: 'tool_result', content: 'ok' }]),
-        assistant([{ type: 'text', text: 'Fixed **it**.\n\n```ts\nx\n```' }], 't2'),
+        line({
+          type: 'assistant',
+          message: { id: 'm2', content: [{ type: 'tool_use', name: 'Read' }] },
+          timestamp: 't2',
+        }),
+        user([{ type: 'tool_result', content: 'ok' }]),
+        assistant([{ type: 'text', text: 'Found it in `auth.ts`.' }], 't3'),
+        assistant([{ type: 'tool_use', name: 'Edit' }], 't3'),
+        user([{ type: 'tool_result', content: 'ok' }]),
+        assistant([{ type: 'text', text: 'Fixed **it**.\n\n```ts\nx\n```' }], 't4'),
         user([{ type: 'text', text: 'Thanks' }]),
-        assistant('You are welcome.', 't3'),
+        assistant('You are welcome.', 't5'),
         'not json',
         '',
       ].join('\n'),
     );
     expect(readResponses(file)).toEqual([
       {
-        text: 'Looking at it.\n\nFixed **it**.\n\n```ts\nx\n```',
-        at: 't2',
+        text: 'Looking at it.\n\nFirst the tests.\n\nFound it in `auth.ts`.\n\nFixed **it**.\n\n```ts\nx\n```',
+        parts: [
+          part('Looking at it.\n\nFirst the tests.'),
+          part('Found it in `auth.ts`.'),
+          part('Fixed **it**.\n\n```ts\nx\n```'),
+        ],
+        at: 't4',
         prompt: 'Fix the login bug',
-        afterBackground: false,
       },
-      { text: 'You are welcome.', at: 't3', prompt: 'Thanks', afterBackground: false },
+      { text: 'You are welcome.', parts: [part('You are welcome.')], at: 't5', prompt: 'Thanks' },
     ]);
   });
 
-  it('gives the turn after background work handing back a response of its own', () => {
+  it('joins the text after background work handing back to the entry, marked', () => {
     fs.writeFileSync(
       file,
       [
@@ -71,27 +100,94 @@ describe('readResponses', () => {
         user('<task-notification>\n<task-id>a2</task-id>', {
           origin: { kind: 'task-notification' },
         }),
-        assistant('Both agents are done.', 't3'),
+        assistant([{ type: 'tool_use', name: 'Read' }], 't3'),
+        user([{ type: 'tool_result', content: 'ok' }]),
+        assistant('Both agents are done.', 't4'),
+        user('Thanks'),
+        assistant('Welcome.', 't5'),
       ].join('\n'),
     );
-    expect(readResponses(file)).toEqual([
-      {
-        text: 'Started them.',
-        at: 't1',
-        prompt: 'Run the tests in the background',
-        afterBackground: false,
-      },
-      { text: 'The tests passed.', at: 't2', prompt: null, afterBackground: true },
-      { text: 'Both agents are done.', at: 't3', prompt: null, afterBackground: true },
-    ]);
+    const [first, second] = readResponses(file);
+    expect(first).toEqual({
+      text: 'Started them.\n\nThe tests passed.\n\nBoth agents are done.',
+      parts: [
+        part('Started them.'),
+        part('The tests passed.', true),
+        part('Both agents are done.', true),
+      ],
+      at: 't4',
+      prompt: 'Run the tests in the background',
+    });
+    expect(second?.prompt).toBe('Thanks');
     expect(isBackgroundHandBack('<agent-message from="a1">')).toBe(true);
     expect(isBackgroundHandBack('Explain <task-notification> to me')).toBe(false);
   });
 
-  it('gives none for a missing file or a prompt without an answer yet', () => {
+  it('keeps a prompt without text, and starts no entry at interrupt notes or a summary', () => {
+    fs.writeFileSync(
+      file,
+      [
+        user('Format the files', { timestamp: 't0' }),
+        assistant([{ type: 'tool_use', name: 'Bash' }], 't1'),
+        user([{ type: 'tool_result', content: 'ok' }]),
+        user('Write the notes'),
+        assistant('Writing them.', 't2'),
+        assistant([{ type: 'tool_use', name: 'Write' }], 't2'),
+        user([{ type: 'tool_result', content: 'denied', is_error: true }]),
+        user([{ type: 'text', text: '[Request interrupted by user for tool use]' }]),
+        user([{ type: 'text', text: '[Request interrupted by user]' }]),
+        user('This session is being continued from a previous conversation…', {
+          isCompactSummary: true,
+          isVisibleInTranscriptOnly: true,
+        }),
+        assistant('Notes written.', 't3'),
+      ].join('\n'),
+    );
+    expect(readResponses(file)).toEqual([
+      { text: '', parts: [], at: 't1', prompt: 'Format the files' },
+      {
+        text: 'Writing them.\n\nNotes written.',
+        parts: [part('Writing them.'), part('Notes written.')],
+        at: 't3',
+        prompt: 'Write the notes',
+      },
+    ]);
+  });
+
+  it('takes a prompt sent by an answer button or Continue, a pasted one and a skill command', () => {
+    fs.writeFileSync(
+      file,
+      [
+        // Pasted and sent with Enter, as an answer button or Continue does.
+        user('I approve the spec.', { origin: { kind: 'human' } }),
+        assistant('Starting step 2.', 't1'),
+        user(
+          '<pasted_content id="ab12">\nContinue where you left off.\n</pasted_content id="ab12">\n',
+          {
+            origin: { kind: 'human' },
+          },
+        ),
+        assistant('Continuing.', 't2'),
+        user('<command-message>review</command-message>\n<command-name>/review</command-name>', {
+          origin: { kind: 'human' },
+        }),
+        assistant('Reviewed.', 't3'),
+        // A local command's output isn't a prompt: it doesn't end the entry.
+        user('<local-command-stdout>Set model</local-command-stdout>'),
+        assistant('Also checked.', 't4'),
+      ].join('\n'),
+    );
+    expect(readResponses(file).map((r) => [r.prompt, r.text])).toEqual([
+      ['I approve the spec.', 'Starting step 2.'],
+      ['Continue where you left off.', 'Continuing.'],
+      ['/review', 'Reviewed.\n\nAlso checked.'],
+    ]);
+  });
+
+  it('gives a prompt without an answer yet an empty entry, none for a missing file', () => {
     expect(readResponses(path.join(path.dirname(file), 'missing.jsonl'))).toEqual([]);
     fs.writeFileSync(file, user('Hello'));
-    expect(readResponses(file)).toEqual([]);
+    expect(readResponses(file)).toEqual([{ text: '', parts: [], at: null, prompt: 'Hello' }]);
   });
 });
 

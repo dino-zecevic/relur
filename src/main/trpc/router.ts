@@ -1174,7 +1174,7 @@ export function createAppRouter({
           signal,
         ),
       ),
-      /** Copies response `index`, or the last one when null. */
+      /** Copies entry `index`, or the latest one when null (⌥C), all its parts. */
       copy: publicProcedure
         .input(workspaceId.extend({ index: z.number().int().min(0).nullable() }))
         .mutation(({ input }) => {
@@ -1182,6 +1182,7 @@ export function createAppRouter({
           const responses = file ? readResponses(file) : [];
           const response = input.index === null ? responses.at(-1) : responses[input.index];
           if (!response) throw new Error('There is no response to copy yet');
+          if (!response.text) throw new Error('The last prompt has no text response');
           clipboard.writeText(response.text);
           return { length: response.text.length };
         }),

@@ -43,46 +43,90 @@ function saveWidth(width: number): void {
   remember(WIDTH_KEY, String(Math.round(width)));
 }
 
+/** One of Claude's messages in an entry (spec §6.8). */
+interface Part {
+  text: string;
+  /** It follows Claude's background work handing back, not tool work. */
+  afterBackground: boolean;
+}
+
+/** Copies `text`; true for 1.5 s afterwards, to say so. */
+function useCopy(): [boolean, (text: string) => void] {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return [
+    copied,
+    (text) => void trpcClient.clipboard.writeText.mutate({ text }).then(() => setCopied(true)),
+  ];
+}
+
+/** A part rendered as Markdown; images show as their alt text (a response has no files). */
+const PartView = memo(function PartView({ text }: { text: string }) {
+  const html = useMemo(() => withImages(renderDocument(text).html, {}), [text]);
+  return (
+    <div
+      data-response-part
+      className="doc-markdown"
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized by renderDocument
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
+
 /**
- * One response as a block: a header (number, the prompt it answers on one
- * line, time, Copy) that expands or collapses it, then its Markdown; collapsed,
- * a few lines fading out.
+ * One entry as a block: a header (number, the prompt on one line, time, Copy)
+ * that expands or collapses it, then Claude's text of that turn, part by part
+ * with a divider where Claude worked between them; collapsed, a few lines
+ * fading out (spec §6.8).
  */
 const ResponseItem = memo(function ResponseItem({
   number,
   text,
+  parts,
   prompt,
-  afterBackground,
   at,
+  running,
   expanded,
   onToggle,
   onReveal,
 }: {
   number: number;
+  /** All its parts as one Markdown text: what Copy copies. */
   text: string;
+  parts: Part[];
   prompt: string | null;
-  /** It follows Claude's background work handing back, not a prompt (spec §6.8). */
-  afterBackground: boolean;
   at: string | null;
+  /** Claude is still in this turn: no text yet isn't "no text". */
+  running: boolean;
   expanded: boolean;
   onToggle: (number: number) => void;
   /** Scrolls the terminal to it (classic mode); null where it can't. */
   onReveal: ((text: string) => boolean) | null;
 }) {
-  // Images show as their alt text: a response has no files of its own.
-  const html = useMemo(() => withImages(renderDocument(text).html, {}), [text]);
-  const [copied, setCopied] = useState(false);
+  const [copied, copy] = useCopy();
+  const [lastCopied, copyLast] = useCopy();
   const [missing, setMissing] = useState(false);
   useEffect(() => {
-    if (!copied && !missing) return;
-    const timer = setTimeout(() => {
-      setCopied(false);
-      setMissing(false);
-    }, 1500);
+    if (!missing) return;
+    const timer = setTimeout(() => setMissing(false), 1500);
     return () => clearTimeout(timer);
-  }, [copied, missing]);
-  const copy = () =>
-    void trpcClient.clipboard.writeText.mutate({ text }).then(() => setCopied(true));
+  }, [missing]);
+  // In the terminal, the text after the last hand-back ends where its Copy button is.
+  const shown = useMemo(() => {
+    const from = Math.max(
+      0,
+      parts.findLastIndex((p) => p.afterBackground),
+    );
+    return parts
+      .slice(from)
+      .map((p) => p.text)
+      .join('\n\n');
+  }, [parts]);
+  const empty = parts.length === 0;
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
     const link = (event.target as Element).closest('a');
     if (link) {
@@ -95,7 +139,7 @@ const ResponseItem = memo(function ResponseItem({
     // Selecting text to copy part of it isn't a click on the response.
     if (window.getSelection()?.toString()) return;
     if (!expanded) onToggle(number);
-    if (onReveal && !onReveal(text)) setMissing(true);
+    if (onReveal && !empty && !onReveal(shown)) setMissing(true);
   };
   const onHeaderKey = (event: KeyboardEvent) => {
     if (event.target !== event.currentTarget) return;
@@ -126,54 +170,88 @@ const ResponseItem = memo(function ResponseItem({
           className="min-w-0 flex-1 truncate text-xs text-fg-subtle"
           title={prompt ?? undefined}
         >
-          {prompt
-            ? `› ${prompt.replace(/\s+/g, ' ')}`
-            : afterBackground
-              ? 'After background work'
-              : ''}
+          {prompt ? `› ${prompt.replace(/\s+/g, ' ')}` : ''}
         </span>
         {missing ? (
           <span className="text-xs text-fg-subtle">Not in the terminal</span>
         ) : time(at) ? (
           <span className="font-mono text-xs text-fg-subtle">{time(at)}</span>
         ) : null}
-        <button
-          type="button"
-          data-response-copy
-          className={button('ghost', 'sm')}
-          title="Copy this response, as Markdown"
-          onClick={(event) => {
-            event.stopPropagation();
-            copy();
-          }}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+        {empty ? null : (
+          <button
+            type="button"
+            data-response-copy
+            className={button('ghost', 'sm')}
+            title="Copy all of Claude's text for this prompt, as Markdown"
+            onClick={(event) => {
+              event.stopPropagation();
+              copy(text);
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        )}
       </div>
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: scrolling the terminal is a convenience; the header expands */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: as above */}
-      <div
-        data-response-body
-        className={`doc-markdown mx-3.5 mb-3 rounded-md px-1 select-text ${
-          expanded
-            ? ''
-            : 'max-h-[4.6em] overflow-hidden [mask-image:linear-gradient(to_bottom,black_30%,transparent)]'
-        } ${onReveal || !expanded ? 'cursor-pointer hover:bg-raised' : ''}`}
-        title={onReveal ? 'Show it in the terminal' : expanded ? undefined : 'Expand'}
-        onClick={onClick}
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized by renderDocument
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      {empty ? (
+        <p data-response-empty className="mx-3.5 mb-3 px-1 text-sm text-fg-subtle italic">
+          {running ? 'No text yet' : 'No text response'}
+        </p>
+      ) : (
+        // biome-ignore lint/a11y/useKeyWithClickEvents: scrolling the terminal is a convenience; the header expands
+        // biome-ignore lint/a11y/noStaticElementInteractions: as above
+        <div
+          data-response-body
+          className={`mx-3.5 mb-3 rounded-md px-1 select-text ${
+            expanded
+              ? ''
+              : 'max-h-[4.6em] overflow-hidden [mask-image:linear-gradient(to_bottom,black_30%,transparent)]'
+          } ${onReveal || !expanded ? 'cursor-pointer hover:bg-raised' : ''}`}
+          title={onReveal ? 'Show it in the terminal' : expanded ? undefined : 'Expand'}
+          onClick={onClick}
+        >
+          {parts.map((part, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: parts only grow at the end
+            <div key={i}>
+              {part.afterBackground ? (
+                <div
+                  data-response-handback
+                  className="my-2 flex items-center gap-2 text-xs text-fg-subtle"
+                >
+                  <span>After background work</span>
+                  <span className="flex-1 border-t border-line" />
+                </div>
+              ) : i > 0 ? (
+                <hr data-response-divider className="my-2.5 border-0 border-t border-line" />
+              ) : null}
+              <PartView text={part.text} />
+            </div>
+          ))}
+        </div>
+      )}
+      {expanded && parts.length > 1 ? (
+        <div className="-mt-2 mb-2 flex justify-end px-3.5">
+          <button
+            type="button"
+            data-response-copy-last
+            className={button('ghost', 'sm')}
+            title="Copy only Claude's last message for this prompt, as Markdown"
+            onClick={() => copyLast(parts.at(-1)?.text ?? '')}
+          >
+            {lastCopied ? 'Copied' : 'Copy last part'}
+          </button>
+        </div>
+      ) : null}
     </article>
   );
 });
 
 /**
- * The Responses panel of a Claude tab (spec §6.8): every response of the
+ * The Responses panel of a Claude tab (spec §6.8): an entry per prompt of the
  * conversation, read from the transcript, newest last, each a collapsible
- * block rendered as Markdown with its own Copy. It follows the transcript as
- * Claude writes it. In classic mode a click on a response scrolls the
+ * block with all of Claude's text for that prompt, rendered as Markdown, and
+ * its own Copy. It follows the transcript as Claude writes it: the newest
+ * entry grows part by part. In classic mode a click on an entry scrolls the
  * terminal to it. Beside the terminal its left edge resizes it; Full view
  * gives it the whole workspace area.
  */
@@ -182,6 +260,7 @@ export function ResponsesPanel({
   aids,
   alternate,
   narrow,
+  running,
   full,
   onToggleFull,
   onClose,
@@ -192,6 +271,8 @@ export function ResponsesPanel({
   /** Claude is in full-screen mode: nothing to scroll to. */
   alternate: boolean;
   narrow: boolean;
+  /** Claude is in a turn: the newest entry may still get text. */
+  running: boolean;
   /** It fills the workspace area, the terminal hidden. */
   full: boolean;
   onToggleFull: () => void;
@@ -376,9 +457,10 @@ export function ResponsesPanel({
                 key={r.index}
                 number={r.index + 1}
                 text={r.text}
+                parts={r.parts}
                 prompt={r.prompt}
-                afterBackground={r.afterBackground}
                 at={r.at}
+                running={running && r.index + 1 === newest}
                 expanded={isExpanded(r.index + 1)}
                 onToggle={toggle}
                 onReveal={reveal}

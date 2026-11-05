@@ -1,14 +1,25 @@
 import fs from 'node:fs';
 
-/** One assistant response: everything Claude wrote after a prompt (spec §6.8). */
-export interface TranscriptResponse {
+/** One of Claude's messages in a turn: its text, without tool calls (spec §6.8). */
+export interface ResponsePart {
   text: string;
-  /** When its last part was written (ISO), if the transcript says. */
-  at: string | null;
-  /** The prompt it answers, as typed; null when the transcript doesn't have it. */
-  prompt: string | null;
   /** It follows background work handing back to Claude, not a prompt (spec §6.8). */
   afterBackground: boolean;
+}
+
+/**
+ * One entry of the Responses panel: everything Claude wrote after a prompt,
+ * until the next one (spec §6.8).
+ */
+export interface TranscriptResponse {
+  /** The whole entry as Markdown: its parts, separated by blank lines. */
+  text: string;
+  /** Claude's messages in order; tool work came between them. Empty: no text. */
+  parts: ResponsePart[];
+  /** When Claude last wrote in it (ISO), else when the prompt was sent, if the transcript says. */
+  at: string | null;
+  /** The prompt it answers, as shown; null when the transcript doesn't have it. */
+  prompt: string | null;
 }
 
 const record = (v: unknown): Record<string, unknown> | null =>
@@ -43,27 +54,62 @@ const PASTED = /\n*<pasted_content id="[^"]*">\n?([\s\S]*?)\n?<\/pasted_content 
  */
 export const shownPrompt = (text: string): string => text.replace(PASTED, '\n$1\n').trim();
 
-/** Whether a user entry is a prompt the user typed (not a tool result or app note). */
+/** A skill command the user sent, as `/name args`; null for any other text. */
+function commandPrompt(text: string): string | null {
+  const name = /<command-name>\s*([^<]*?)\s*<\/command-name>/.exec(text)?.[1];
+  if (!name) return null;
+  const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1]?.trim();
+  return args ? `${name} ${args}` : name;
+}
+
+/** The texts of a user entry's message: its string, or its text parts. */
+function userTexts(entry: Record<string, unknown>): string[] {
+  const content = record(entry.message)?.content;
+  if (typeof content === 'string') return [content];
+  if (!Array.isArray(content)) return [];
+  return content
+    .map((part) => {
+      const p = record(part);
+      return p?.type === 'text' && typeof p.text === 'string' ? p.text : null;
+    })
+    .filter((t) => t !== null);
+}
+
+/** Whether a user entry is a prompt the user sent (not a tool result or app note). */
 function isPrompt(entry: Record<string, unknown>): boolean {
   return promptText(entry) !== null;
 }
 
-/** The text of a prompt the user typed; null for a tool result or app note. */
+/** The note Claude Code writes when a turn is interrupted (Esc, or a permission answered No). */
+const INTERRUPTED = /^\[Request interrupted by user/;
+
+/**
+ * The text of a prompt the user sent, typed or pasted (an answer button or
+ * Continue pastes it), as shown in the Responses panel; null for a tool
+ * result, an interrupt note, a compacted conversation's summary or an app
+ * note. Claude Code marks prompts with `origin.kind` `human`; without an
+ * origin (older transcripts), a text that isn't markup is one.
+ */
 function promptText(entry: Record<string, unknown>): string | null {
+  if (entry.isMeta === true || entry.isCompactSummary === true) return null;
+  const origin = record(entry.origin)?.kind;
+  if (origin !== undefined && origin !== 'human') return null;
+  const human = origin === 'human';
+  const parts = userTexts(entry)
+    .map((t) => (human && commandPrompt(t)) || shownPrompt(t))
+    .filter((t) => t && (human || (!t.startsWith('<') && !INTERRUPTED.test(t))));
+  return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+/**
+ * A prompt as the prompt markers find it in Claude's reprint (spec §6.8): any
+ * user text that isn't markup once pastes are unwrapped; null otherwise.
+ */
+function typedPrompt(entry: Record<string, unknown>): string | null {
   if (entry.isMeta === true) return null;
-  const content = record(entry.message)?.content;
-  if (typeof content === 'string') {
-    const shown = shownPrompt(content);
-    return shown && !shown.startsWith('<') ? shown : null;
-  }
-  if (!Array.isArray(content)) return null;
-  const parts = content
-    .map((part) => {
-      const p = record(part);
-      const shown = p?.type === 'text' && typeof p.text === 'string' ? shownPrompt(p.text) : '';
-      return shown && !shown.startsWith('<') ? shown : null;
-    })
-    .filter((t) => t !== null);
+  const parts = userTexts(entry)
+    .map(shownPrompt)
+    .filter((t) => t && !t.startsWith('<'));
   return parts.length > 0 ? parts.join('\n\n') : null;
 }
 
@@ -89,7 +135,7 @@ export function readPrompts(file: string): string[] {
     } catch {
       continue;
     }
-    const prompt = entry?.type === 'user' && !isHandBack(entry) ? promptText(entry) : null;
+    const prompt = entry?.type === 'user' && !isHandBack(entry) ? typedPrompt(entry) : null;
     if (prompt) prompts.push(prompt);
   }
   return prompts;
@@ -108,11 +154,17 @@ function assistantText(entry: Record<string, unknown>): string {
     .join('\n\n');
 }
 
+/** Parts joined as one Markdown text. */
+export const joinParts = (parts: readonly { text: string }[]): string =>
+  parts.map((p) => p.text).join('\n\n');
+
 /**
- * The responses of a session transcript (JSON lines written by Claude Code),
- * oldest first: per prompt, the text of the assistant messages that follow,
- * without tool calls. Read-only (decision D12); a missing or unreadable file
- * gives none.
+ * The entries of a session transcript (JSON lines written by Claude Code),
+ * oldest first: one per prompt, with the text of each of Claude's messages
+ * until the next prompt as a part, without tool calls (spec §6.8). Text after
+ * background work hands back joins the entry, its part marked. A prompt
+ * without any text still has its entry. Read-only (decision D12); a missing
+ * or unreadable file gives none.
  */
 export function readResponses(file: string): TranscriptResponse[] {
   let text: string;
@@ -123,18 +175,28 @@ export function readResponses(file: string): TranscriptResponse[] {
   }
   const responses: TranscriptResponse[] = [];
   let current: {
-    parts: string[];
+    parts: ResponsePart[];
     at: string | null;
     prompt: string | null;
-    afterBackground: boolean;
+    /** The message the last part is from; null once something came after it. */
+    message: string | null;
+    /** A hand-back came since the last part. */
+    handBack: boolean;
   } | null = null;
+  const open = (prompt: string | null, at: unknown) => ({
+    parts: [],
+    at: typeof at === 'string' ? at : null,
+    prompt,
+    message: null,
+    handBack: false,
+  });
   const close = () => {
-    if (current && current.parts.length > 0) {
+    if (current && (current.prompt !== null || current.parts.length > 0)) {
       responses.push({
-        text: current.parts.join('\n\n'),
+        text: joinParts(current.parts),
+        parts: current.parts,
         at: current.at,
         prompt: current.prompt,
-        afterBackground: current.afterBackground,
       });
     }
     current = null;
@@ -151,15 +213,26 @@ export function readResponses(file: string): TranscriptResponse[] {
     const prompt = entry.type === 'user' ? promptText(entry) : null;
     if (prompt !== null) {
       close();
-      current = { parts: [], at: null, prompt: prompt.trim(), afterBackground: false };
-    } else if (entry.type === 'user' && isHandBack(entry)) {
-      // Claude's turn after its background work handed back: a response of its own.
-      close();
-      current = { parts: [], at: null, prompt: null, afterBackground: true };
+      current = open(prompt, entry.timestamp);
+    } else if (entry.type === 'user') {
+      // Tool work, or background work handing back: the next text is a part of its own.
+      current ??= open(null, null);
+      current.message = null;
+      if (isHandBack(entry)) current.handBack = true;
     } else if (entry.type === 'assistant') {
+      current ??= open(null, null);
       const part = assistantText(entry).trim();
-      current ??= { parts: [], at: null, prompt: null, afterBackground: false };
-      if (part) current.parts.push(part);
+      // Claude Code writes a message's blocks as entries of their own, with its id.
+      const id = record(entry.message)?.id;
+      const message = typeof id === 'string' ? id : 'same';
+      const last = current.parts.at(-1);
+      if (part && last && current.message === message) {
+        last.text = `${last.text}\n\n${part}`;
+      } else if (part) {
+        current.parts.push({ text: part, afterBackground: current.handBack });
+        current.handBack = false;
+        current.message = message;
+      }
       if (typeof entry.timestamp === 'string') current.at = entry.timestamp;
     }
   }

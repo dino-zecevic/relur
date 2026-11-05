@@ -53,8 +53,8 @@ function showWatchLimitNotice() {
 
 /**
  * The Claude tab's bar (spec §6.8): the Responses toggle (⇧⌘R), and ⌥C,
- * which copies the last response, read from the transcript, in both of
- * Claude's display modes.
+ * which copies the latest entry (all of Claude's text since the last prompt),
+ * read from the transcript, in both of Claude's display modes.
  */
 function ResponsesControls({
   workspaceId,
@@ -121,7 +121,7 @@ function ResponsesControls({
         className={compact ? `${iconButton} aria-pressed:bg-raised` : button('ghost', 'sm')}
         aria-pressed={open}
         aria-label="Responses"
-        title={`${compact ? 'Responses: e' : 'E'}very response of the conversation, each with Copy (${keyHint('responses')}); ${keyHint('copyResponse')} copies the last one`}
+        title={`${compact ? 'Responses: C' : 'C'}laude's text for each prompt of the conversation, each with Copy (${keyHint('responses')}); ${keyHint('copyResponse')} copies the latest`}
         onClick={onToggle}
       >
         {compact ? (
@@ -747,6 +747,7 @@ export function WorkspaceView({
             aids={aids}
             alternate={alternate}
             narrow={narrow}
+            running={workspace.state === 'working' || workspace.state === 'needs-permission'}
             full={responsesFull}
             onToggleFull={() => {
               setResponsesFull((full) => !full);
