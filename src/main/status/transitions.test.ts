@@ -60,17 +60,35 @@ describe('transition', () => {
     });
   });
 
-  it('is Done with a count when only commands still run: a dev server or a wait, alike', () => {
+  it('is Done with a count when only dev servers still run', () => {
     expect(transition('working', 'Stop', stop(shell))).toEqual({
       state: 'done',
       message: null,
       background: 1,
     });
-    // Types it doesn't know count as running, not as waited for.
-    expect(transition('working', 'Stop', stop({ type: 'monitor', status: 'running' }))?.state).toBe(
-      'done',
-    );
+    const npm = { type: 'shell', status: 'running', command: 'cd web && npm run dev' };
+    expect(transition('working', 'Stop', stop(shell, npm))?.state).toBe('done');
     expect(runningBackgroundTasks({ background_tasks: 'nonsense' })).toEqual([]);
+  });
+
+  it('holds Done for any other command, also next to a dev server', () => {
+    const sleep = { type: 'shell', status: 'running', command: 'sleep 60 && echo finished' };
+    expect(transition('working', 'Stop', stop(sleep))).toEqual({
+      state: 'working',
+      message: null,
+      background: 1,
+      held: true,
+    });
+    expect(transition('working', 'Stop', stop(shell, sleep))).toMatchObject({
+      state: 'working',
+      background: 2,
+      held: true,
+    });
+    // Types it doesn't know count as commands; agents aren't held, they always hand back.
+    expect(
+      transition('working', 'Stop', stop({ type: 'monitor', status: 'running' })),
+    ).toMatchObject({ state: 'working', held: true });
+    expect(transition('working', 'Stop', stop(agent, sleep))?.held).toBeUndefined();
   });
 
   it('keeps the count through tool events and ignores the idle notice while waiting', () => {

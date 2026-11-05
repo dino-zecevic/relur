@@ -2,7 +2,7 @@
 
 {{app}} tells you when Claude needs you or has finished.
 
-- A notification when Claude needs permission, waits for input or is done, titled with the profile and the task, like "[Work] ABC-123 needs permission", with Claude's message below. None appears while that workspace's Claude tab is in front of you in the focused window. Clicking one opens the profile, selects the workspace and puts its Claude tab in focus. When your skills stop at a [workflow gate](workflows#when-the-skills-wait-for-you), you get one notification, "waits for you", and no separate "is done". While Claude waits for its background agents there's no "is done" yet; when commands it started still run, "is done" says so (see [Work in the background](status-glyphs#work-in-the-background)).
+- A notification when Claude needs permission, waits for input or is done, titled with the profile and the task, like "[Work] ABC-123 needs permission", with Claude's message below. None appears while that workspace's Claude tab is in front of you in the focused window. Clicking one opens the profile, selects the workspace and puts its Claude tab in focus. When your skills stop at a [workflow gate](workflows#when-the-skills-wait-for-you), you get one notification, "waits for you", and no separate "is done". While Claude waits for its background agents or commands there's no "is done" yet; when only dev servers it started still run, or a command still runs after 10 minutes, "is done" says so (see [Work in the background](status-glyphs#work-in-the-background)).
 - A short sound, only for the events you chose for the profile. All sounds are off until you turn them on: see [Sounds](notifications#sounds).
 - **Do Not Disturb** in [Edit profile](edit-profile) › General silences both for that profile. Glyphs and badges still update.
 
@@ -19,7 +19,7 @@ In [Edit profile](edit-profile) › General, **Sounds** has a checkbox per event
 | Needs permission | Claude asks to use a tool (two rising notes) |
 | Waiting for input | Claude asks you a question (two rising notes) |
 | Awaiting approval | Your skills stop at a [workflow gate](workflows#when-the-skills-wait-for-you) (two rising notes) |
-| Done | Claude has finished, with no background agent still running (one soft note) |
+| Done | Claude has finished, with nothing it waits for still running in the background (one soft note) |
 | Error | A workspace's setup or start failed (two falling notes). There's no notification for it |
 
 Like notifications, a sound doesn't play while you're looking at that workspace's Claude tab, and **Do Not Disturb** silences all of them.

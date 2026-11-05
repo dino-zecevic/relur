@@ -1,4 +1,5 @@
 import type { WorkspaceState } from '@shared/status';
+import { looksLikeDevServer } from '../memory/measure';
 
 export interface Transition {
   state: WorkspaceState;
@@ -6,13 +7,18 @@ export interface Transition {
   message: string | null;
   /** How many of Claude's background tasks still run (spec §10.2). */
   background: number;
+  /**
+   * Working only for background commands, no agent: Done is held until they
+   * hand back, or until the fallback (spec §10.2).
+   */
+  held?: boolean;
 }
 
 /** Where the workspace is when a hook event arrives. */
 export interface Current {
   /** Its background count. */
   background?: number;
-  /** Claude's turn has ended while it waits for background agents (spec §10.2). */
+  /** Claude's turn has ended while it waits for background work (spec §10.2). */
   waiting?: boolean;
 }
 
@@ -36,6 +42,8 @@ export function isIdleNotification(payload: unknown): boolean {
 export interface BackgroundTask {
   type: string;
   status: string;
+  /** A command's command line; empty for agents. */
+  command: string;
 }
 
 /** The background tasks still running at Stop (spec §10.2); none when the payload has no list. */
@@ -44,17 +52,25 @@ export function runningBackgroundTasks(payload: unknown): BackgroundTask[] {
   if (!Array.isArray(tasks)) return [];
   return tasks
     .map(record)
-    .map((t) => ({ type: String(t.type ?? ''), status: String(t.status ?? '') }))
+    .map((t) => ({
+      type: String(t.type ?? ''),
+      status: String(t.status ?? ''),
+      command: typeof t.command === 'string' ? t.command : '',
+    }))
     .filter((t) => t.status === 'running');
 }
 
+const isAgent = (task: BackgroundTask) => task.type === 'subagent';
+
 /**
- * Whether Claude surely continues once the task ends: a background agent
- * always hands its result back. A command Claude waits for and one it left
- * running on purpose (a dev server) look the same (checked live), so
- * commands, and types not known, don't count.
+ * Whether Claude waits for the task (spec §10.2): a background agent always
+ * hands its result back. A command Claude waits for and one it leaves running
+ * on purpose send the same payload (checked live), so the command line
+ * decides: one that looks like a dev server, as the memory panel judges it,
+ * isn't waited for; any other command, and types not known, are.
  */
-export const waitedFor = (task: BackgroundTask) => task.type === 'subagent';
+export const waitedFor = (task: BackgroundTask) =>
+  isAgent(task) || !looksLikeDevServer(task.command);
 
 /**
  * The state a hook event moves a workspace to (spec §10.2), or null for none.
@@ -77,21 +93,21 @@ export function transition(
       const text = typeof message === 'string' ? message : null;
       if (isIdleNotification(payload)) {
         // The idle notice after Done changes nothing and doesn't alert again; nor
-        // does it while Claude waits for its background agents.
+        // does it while Claude waits for its background work.
         if (current === 'done' || (current === 'working' && waiting)) return null;
         return { state: 'needs-input', message: text, background: 0 };
       }
       return { state: 'needs-permission', message: text, background: 0 };
     }
     case 'Stop': {
-      // Waiting for background agents is still Working; commands left running
-      // only add a note to Done.
+      // Waiting for background work is still Working; dev servers left
+      // running only add a note to Done.
       const running = runningBackgroundTasks(payload);
-      return {
-        state: running.some(waitedFor) ? 'working' : 'done',
-        message: null,
-        background: running.length,
-      };
+      const waited = running.filter(waitedFor);
+      if (waited.length === 0) return { state: 'done', message: null, background: running.length };
+      // Only commands: held, with a fallback for one that never ends.
+      const held = !waited.some(isAgent);
+      return { state: 'working', message: null, background: running.length, ...(held && { held }) };
     }
     case 'SessionEnd':
       return { state: 'exited', message: null, background: 0 };

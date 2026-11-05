@@ -70,8 +70,8 @@ export const unfinishedTooltip = (u: Pick<Unfinished, 'kind' | 'stopped'> | null
 
 /**
  * Only Working is continued without the user choosing it; Esc-interrupted
- * work and stopped background commands (a command Claude waited for and a
- * dev server look the same) are offered unticked; a permission has to be
+ * work and stopped background commands (dev servers, or commands past the
+ * hold's fallback, §10.2: Claude may not have waited for them) are offered unticked; a permission has to be
  * given again in the session, so it can't be continued at all (spec §9.7).
  */
 export const continuesAtStart = (kind: UnfinishedKind) => kind === 'working';

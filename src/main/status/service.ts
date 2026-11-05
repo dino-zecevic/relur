@@ -6,7 +6,7 @@ import type { HookMessage } from '../bridge/server';
 import { endsWithDeniedPermission, isBackgroundHandBack } from '../claude/transcript';
 import type { WorkspaceRecords } from '../db/workspaces';
 import type { SessionHost } from '../sessions/host';
-import { transition } from './transitions';
+import { type Transition, transition } from './transitions';
 
 /** States that alert: a notification and a sound (spec §10.3). */
 const ALERT_STATES: readonly WorkspaceState[] = [
@@ -68,6 +68,13 @@ const REREAD_EVENTS = ['Stop', 'PostToolUse'];
 export const ANSWER_CHECKS_MS = [1000, 3000];
 
 /**
+ * How long Done is held for background commands at most (spec §10.2): then
+ * it is Done with "n still running in the background", for a command that
+ * never ends, such as a server not recognised as one.
+ */
+export const HOLD_DONE_MS = 10 * 60_000;
+
+/**
  * Whether keys typed while Claude asks for permission answer it: Enter picks
  * the highlighted choice, Esc declines, a digit picks that choice. Arrow keys
  * only move the highlight.
@@ -98,9 +105,12 @@ export class StatusService {
 
   /**
    * Workspaces whose Claude ended its turn while it waits for background
-   * agents (spec §10.2), until its next turn starts.
+   * work (spec §10.2), until its next turn starts.
    */
   private readonly waiting = new Set<string>();
+
+  /** The fallback of each workspace whose Done is held for background commands (spec §10.2). */
+  private readonly holds = new Map<string, NodeJS.Timeout>();
 
   /** Workspaces whose permission prompt was answered, until the next hook event. */
   private readonly answered = new Map<string, NodeJS.Timeout[]>();
@@ -110,6 +120,7 @@ export class StatusService {
     private readonly host: SessionHost,
     private readonly platform: StatusPlatform,
     private readonly answerChecksMs: readonly number[] = ANSWER_CHECKS_MS,
+    private readonly holdDoneMs = HOLD_DONE_MS,
   ) {
     host.onSpawn((info) => {
       if (info.kind !== 'claude' || !info.workspaceId) return;
@@ -120,6 +131,7 @@ export class StatusService {
       if (info.kind !== 'claude' || !info.workspaceId) return;
       if (!this.quitting) records.setClaudeRunning(info.workspaceId, false);
       this.waiting.delete(info.workspaceId);
+      this.clearHold(info.workspaceId);
       const workspace = records.get(info.workspaceId);
       if (workspace && workspace.state !== 'exited') records.setState(workspace.id, 'exited');
     });
@@ -128,7 +140,7 @@ export class StatusService {
       const current = records.get(info.workspaceId)?.state;
       // Stop doesn't fire when the user interrupts Claude; the Esc key in its
       // own terminal does (spec §10.2), unless its turn has already ended and
-      // only background agents work.
+      // only its background work goes on.
       if (current === 'working' && data === '\x1b' && !this.waiting.has(info.workspaceId)) {
         records.setState(info.workspaceId, 'interrupted');
       } else if (current === 'needs-permission' && answersPermission(data)) {
@@ -179,11 +191,19 @@ export class StatusService {
       waiting: this.waiting.has(workspace.id),
     });
     if (!next) return;
-    // Tool events may come from a background agent; any other event ends the wait.
-    if (message.event === 'Stop' && next.state === 'working') this.waiting.add(workspace.id);
-    else if (message.event !== 'PreToolUse' && message.event !== 'PostToolUse') {
+    // Tool events may come from a background agent; any other event ends the
+    // wait and the hold, and a Stop that waits starts them again.
+    if (message.event !== 'PreToolUse' && message.event !== 'PostToolUse') {
       this.waiting.delete(workspace.id);
+      this.clearHold(workspace.id);
     }
+    if (message.event === 'Stop' && next.state === 'working') this.waiting.add(workspace.id);
+    if (next.held) this.hold(workspace.id);
+    this.settle(workspace, next);
+  }
+
+  /** Moves a workspace to its next state, with the unread marker and alerts it brings. */
+  private settle(workspace: Workspace, next: Transition): void {
     const changed = next.state !== workspace.state;
     const visible = this.platform.claudeTabInFocus(workspace.id);
     const gate = this.workflow?.info(workspace.id) ?? null;
@@ -200,6 +220,28 @@ export class StatusService {
     } else if (changed && ALERT_STATES.includes(next.state)) {
       this.alert(workspace, next, visible);
     }
+  }
+
+  /**
+   * Done held for background commands (spec §10.2): a hand-back ends the hold
+   * and Claude takes another turn; without one, the fallback makes it Done
+   * with the commands still counted.
+   */
+  private hold(workspaceId: string): void {
+    const timer = setTimeout(() => {
+      this.holds.delete(workspaceId);
+      this.waiting.delete(workspaceId);
+      const workspace = this.records.get(workspaceId);
+      // While the app quits, states stay as quitting marked them (spec §9.7).
+      if (this.quitting || workspace?.state !== 'working') return;
+      this.settle(workspace, { state: 'done', message: null, background: workspace.background });
+    }, this.holdDoneMs);
+    this.holds.set(workspaceId, timer);
+  }
+
+  private clearHold(workspaceId: string): void {
+    clearTimeout(this.holds.get(workspaceId));
+    this.holds.delete(workspaceId);
   }
 
   /**

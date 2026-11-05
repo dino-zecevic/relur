@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openStateDb } from '../db/state-db';
 import { WorkspaceRecords } from '../db/workspaces';
 import { SessionHost } from '../sessions/host';
-import { type Alert, StatusService } from './service';
+import { type Alert, HOLD_DONE_MS, StatusService } from './service';
 
 const workspace: Omit<Workspace, 'repos'> = {
   id: 'ws_1',
@@ -216,7 +216,7 @@ describe('StatusService', () => {
     expect(state()).toBe('done');
   });
 
-  it('is Done with a note when only commands Claude started still run', () => {
+  it('is Done with a note when only dev servers Claude started still run', () => {
     hook('UserPromptSubmit');
     hook('Stop', {
       background_tasks: [{ id: 'b1', type: 'shell', status: 'running', command: 'npm run dev' }],
@@ -235,6 +235,99 @@ describe('StatusService', () => {
     expect(records.get('ws_1')).toMatchObject({ state: 'working', background: 1 });
     hook('SessionEnd');
     expect(records.get('ws_1')).toMatchObject({ state: 'exited', background: 0 });
+  });
+
+  describe('Done held for background commands (spec §10.2)', () => {
+    const running = (...commands: string[]) => ({
+      background_tasks: commands.map((command, i) => ({
+        id: `b${i}`,
+        type: 'shell',
+        status: 'running',
+        command,
+      })),
+    });
+    const idle = { notification_type: 'idle_prompt', message: 'Claude is waiting for your input' };
+    const handBack = { prompt: '<task-notification>\n<task-id>b0</task-id>' };
+    const summary = () => notified.map((a) => [a.state, a.body]);
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('stays Working while Claude waits for a command, then is Done once', () => {
+      hook('UserPromptSubmit');
+      hook('Stop', running('sleep 60 && echo finished'));
+      expect(records.get('ws_1')).toMatchObject({ state: 'working', background: 1, unread: false });
+      // The idle notice doesn't end it; the hand-back and Claude's turn after it don't either.
+      hook('Notification', idle);
+      vi.advanceTimersByTime(HOLD_DONE_MS - 1000);
+      expect(state()).toBe('working');
+      hook('UserPromptSubmit', handBack);
+      hook('PreToolUse', { tool_name: 'Read' });
+      vi.advanceTimersByTime(2000);
+      expect(records.get('ws_1')).toMatchObject({ state: 'working', background: 1 });
+      expect(notified).toEqual([]);
+      hook('Stop', running());
+      expect(records.get('ws_1')).toMatchObject({ state: 'done', background: 0, unread: true });
+      vi.advanceTimersByTime(HOLD_DONE_MS);
+      expect(summary()).toEqual([['done', 'Fix login']]);
+    });
+
+    it('is Done with a note at the fallback, and Done again after a late hand-back', () => {
+      hook('UserPromptSubmit');
+      hook('Stop', running('npm run dev', './watch-forever.sh'));
+      vi.advanceTimersByTime(HOLD_DONE_MS - 1);
+      expect(records.get('ws_1')).toMatchObject({ state: 'working', background: 2 });
+      expect(notified).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(records.get('ws_1')).toMatchObject({ state: 'done', background: 2, unread: true });
+      expect(summary()).toEqual([['done', 'Fix login · 2 still running in the background']]);
+      hook('UserPromptSubmit', handBack);
+      hook('Stop', running('npm run dev'));
+      expect(records.get('ws_1')).toMatchObject({ state: 'done', background: 1 });
+      expect(summary()).toHaveLength(2);
+    });
+
+    it('sends nothing at the fallback while the Claude tab is in view', () => {
+      hook('UserPromptSubmit');
+      hook('Stop', running('sleep 900'));
+      visible = true;
+      vi.advanceTimersByTime(HOLD_DONE_MS);
+      expect(records.get('ws_1')).toMatchObject({ state: 'done', background: 1, unread: false });
+      expect(notified).toEqual([]);
+    });
+
+    it('ends without Done at a typed prompt, a permission request or the end of the session', () => {
+      hook('UserPromptSubmit');
+      hook('Stop', running('sleep 60'));
+      hook('UserPromptSubmit', { prompt: 'Something else meanwhile' });
+      vi.advanceTimersByTime(HOLD_DONE_MS);
+      expect(state()).toBe('working');
+      hook('Stop', running('sleep 60'));
+      hook('Notification', { message: 'Claude needs your permission to use Bash' });
+      vi.advanceTimersByTime(HOLD_DONE_MS);
+      expect(state()).toBe('needs-permission');
+      hook('UserPromptSubmit');
+      hook('Stop', running('sleep 60'));
+      hook('SessionEnd');
+      vi.advanceTimersByTime(HOLD_DONE_MS);
+      expect(state()).toBe('exited');
+      expect(notified.map((a) => a.state)).toEqual(['needs-permission']);
+    });
+
+    it("holds Done when a Stop lists only the agents' own commands (checked live)", () => {
+      hook('UserPromptSubmit');
+      hook('Stop', {
+        background_tasks: [
+          { id: 'a1', type: 'subagent', status: 'running' },
+          { id: 'a2', type: 'subagent', status: 'running' },
+        ],
+      });
+      hook('Stop', running('sleep 30', 'sleep 30'));
+      hook('PreToolUse', { agent_id: 'a1', tool_name: 'Bash' });
+      expect(records.get('ws_1')).toMatchObject({ state: 'working', background: 2 });
+      hook('UserPromptSubmit', { prompt: '<task-notification>\n<task-id>a1</task-id>' });
+      hook('Stop', running());
+      expect(summary()).toEqual([['done', 'Fix login']]);
+    });
   });
 
   it('leaves Needs permission when the prompt is answered in the Claude tab', async () => {

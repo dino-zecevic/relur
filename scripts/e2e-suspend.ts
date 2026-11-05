@@ -105,7 +105,7 @@ while IFS= read -r line; do
   case "$line" in
     prompt) hook UserPromptSubmit '{"prompt":"Fix the login"}' ;;
     done) hook Stop '{}' ;;
-    background) hook Stop '{"background_tasks":[{"type":"shell","status":"running"}]}' ;;
+    background) hook Stop '{"background_tasks":[{"type":"shell","status":"running","command":"npm run dev"}]}' ;;
     *) printf '%s\\n' "$line" >> "$HOME/input-$name.txt" ;;
   esac
 done

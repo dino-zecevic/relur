@@ -39,12 +39,19 @@ export function descendants(tree: ProcessTree, pid: number): ProcessEntry[] {
 
 const MCP = /(^|[\s/@_-])mcp([\s/._-]|$)|modelcontextprotocol/i;
 const DEV_SERVER =
-  /(^|[\s/])(vite|next\s+dev|nuxt\s+dev|webpack(-dev-server|\s+serve)|nodemon|astro\s+dev|remix\s+dev|ng\s+serve|rails\s+s(erver)?|runserver|uvicorn|flask\s+run|(npm|pnpm|yarn|bun)(\s+run)?\s+(dev|start|serve))(\s|$)/i;
+  /(^|[\s/])(vite|next\s+dev|nuxt\s+dev|webpack(-dev-server|\s+serve)|nodemon|astro\s+dev|remix\s+dev|ng\s+serve|rails\s+s(erver)?|runserver|uvicorn|flask\s+run|http\.server|(npm|pnpm|yarn|bun)(\s+run)?\s+(dev|start|serve))(\s|$)/i;
+
+/**
+ * Whether a command line looks like a dev server (vite, `npm run dev`,
+ * runserver, …). Claude's background commands are judged by it too (spec
+ * §10.2), so the memory panel and the status agree.
+ */
+export const looksLikeDevServer = (command: string) => DEV_SERVER.test(command);
 
 /** "node dev server", "node MCP server", or the process name ("zsh"). */
 export function processLabel(p: Pick<ProcessEntry, 'name' | 'args'>): string {
   if (MCP.test(p.args)) return `${p.name} MCP server`;
-  if (DEV_SERVER.test(p.args)) return `${p.name} dev server`;
+  if (looksLikeDevServer(p.args)) return `${p.name} dev server`;
   return p.name;
 }
 

@@ -24,10 +24,10 @@ In a profile that [suspends idle sessions](suspend), only the workspace you're l
 
 Quitting, logging out, an update with `install.sh` or a crash stops Claude in the middle of its turn, together with any commands or background agents it had running. {{app}} remembers where that happened. A workspace counts as **unfinished** when Claude was:
 
-- **Working**, including while it waited for its own background agents;
+- **Working**, including while it waited for its own background agents or commands;
 - **interrupted with <kbd>Esc</kbd>** by you, just before the stop: it's never continued unless you choose so;
 - **asking for permission**: never continued by itself; give the permission again in the workspace;
-- **Done, with commands still running in the background** (the sidebar showed **1 running**): quitting stops them. {{app}} can't tell a command Claude waits for from a dev server, so it's up to you: such a workspace is marked "1 background command was stopped" and never continued unless you choose it. Continuing tells Claude its commands were stopped, so it can run again what it needs.
+- **Done, with commands still running in the background** (the sidebar showed **1 running**: dev servers, or commands still running after 10 minutes): quitting stops them. Claude may not have been waiting for them, so it's up to you: such a workspace is marked "1 background command was stopped" and never continued unless you choose it. Continuing tells Claude its commands were stopped, so it can run again what it needs.
 
 Done without background commands, and Waiting for input, don't count. After a crash, a workspace that was still Working counts the same.
 

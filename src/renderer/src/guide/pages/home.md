@@ -7,7 +7,7 @@ Each profile has a Home <kbd>{{key:home}}</kbd>: the first thing you see, and wh
 The Overview shows the profile's workspaces in four sections, and only those that need something from you. It changes as Claude works.
 
 - **Needs you:** workspaces that need permission (**Open** takes you to the Claude tab), are waiting for input (**Open**), or wait at a [workflow gate](workflows#when-the-skills-wait-for-you), with **Review**, which opens the spec, and the gate's answer button, such as **Approve spec**. Workspaces Claude didn't [finish](resume#the-unfinished-marker) are here too, with **Continue** and **Dismiss**. The oldest is first, in the order <kbd>{{key:nextNeedingYou}}</kbd> jumps through them.
-- **Working now:** where Claude is working, for how long, how many of its agents run in the background, and how much [memory](memory) its sessions use.
+- **Working now:** where Claude is working, for how long, how much of its work runs in the background, and how much [memory](memory) its sessions use.
 - **Ready to ship:** Done workspaces with something left to [finish](finishing-work). **Commit…** opens the workspace with the Changes panel and its commit message in focus; **Push** pushes the branch (in a workspace with [linked repositories](tasks-across-repositories) it opens the Changes panel, where you push each one); **View PR** opens the pull request in your browser.
 - **Clean up:** workspaces whose pull request is merged. **Delete** on a row opens [Delete workspace](delete-workspace); **Delete n merged workspaces** opens one dialog with all of them, each with what deleting it would lose, and deletes them together.
 

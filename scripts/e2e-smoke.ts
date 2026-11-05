@@ -220,8 +220,15 @@ async function checkHyperlink(page: Cdp, main: Cdp, home: string) {
 
 const profileVar = envVar('PROFILE');
 
+/** The fallback of Done held for background commands (spec §10.2), shortened for the test. */
+const HOLD_DONE_MS = 8000;
+
 async function main() {
   const fx = createFixture();
+  const appEnv = () => ({
+    ...withDisplayEnv(fx.env),
+    [envVar('TEST_HOLD_DONE_MS')]: String(HOLD_DONE_MS),
+  });
   let app: RunningApp | undefined;
   try {
     const { clone: repo } = fx.cloneWithRemote('api-service', 'develop');
@@ -360,7 +367,7 @@ exec sleep 600
       }),
     );
 
-    app = await launchApp({ env: withDisplayEnv(fx.env), dev: devMode, electronArgs });
+    app = await launchApp({ env: appEnv(), dev: devMode, electronArgs });
     const { page, main: mainProcess } = app;
     // Replace only the native panel; record whether it was attached to the app window.
     await mainProcess.eval(`(() => {
@@ -969,9 +976,14 @@ exec sleep 600
     // Background work (spec §10.2), with the Stop payloads Claude Code sends
     // (checked live). Waiting for agents stays Working, with the count.
     const background = `(${row}.querySelector('[data-background]')?.textContent ?? null)`;
-    const tasks = (...list: [string, string][]) =>
+    const tasks = (...list: [string, string, string?][]) =>
       JSON.stringify({
-        background_tasks: list.map(([id, type]) => ({ id, type, status: 'running' })),
+        background_tasks: list.map(([id, type, command]) => ({
+          id,
+          type,
+          status: 'running',
+          ...(command && { command }),
+        })),
       });
     const sent = (await notifications()).length;
     // Only prompts you typed are numbered (spec §6.8); hand-backs below aren't.
@@ -1003,10 +1015,9 @@ exec sleep 600
     await mainProcess.waitFor(`globalThis.__notifications.length === ${sent + 1}`, 'one Done');
     const done = (await notifications()).at(-1);
     assert.deepEqual([done?.title, done?.body], ['[Work] PROJ-1 is done', 'Fix login timeout']);
-    // A command left running, such as a dev server, can't be told from one
-    // Claude waits for: Done, with a note.
+    // A dev server left running (its command looks like one): Done, with a note.
     await typeInTerminal(page, 'prompt');
-    await typeInTerminal(page, `hook Stop ${tasks(['b1', 'shell'])}`);
+    await typeInTerminal(page, `hook Stop ${tasks(['b1', 'shell', 'npm run dev'])}`);
     await page.waitFor(`/1 running$/.test(${background})`, 'Done with 1 running');
     assert.match(
       await page.eval<string>(`${row}.title`),
@@ -1018,17 +1029,43 @@ exec sleep 600
       'Fix login timeout · 1 still running in the background',
     );
     await screenshot(page, screenshotDir, '7f-background-command.png');
-    // A command Claude waited for: when it ends, Claude takes another turn, then is Done.
+    // Any other command holds Done, Working with the count; one that never
+    // hands back is Done with a note at the fallback (shortened for the test).
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, `hook Stop ${tasks(['b2', 'shell', './watch-forever.sh'])}`);
+    await page.waitFor(`${background} === '1 in background'`, 'Done held');
+    assert.equal(await page.eval(`!!${row}.querySelector('[aria-label=Working]')`), true);
+    assert.equal((await notifications()).length, sent + 2, 'no Done while held');
+    await mainProcess.waitFor(
+      `globalThis.__notifications.length === ${sent + 3}`,
+      'Done at the fallback',
+      HOLD_DONE_MS + 10_000,
+    );
+    assert.equal(
+      (await notifications()).at(-1)?.body,
+      'Fix login timeout · 1 still running in the background',
+    );
+    await page.waitFor(`/1 running$/.test(${background})`, 'Done with 1 running, at the fallback');
+    // A command Claude waits for: no Done until it hands back and Claude's
+    // turn after it ends, then one.
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, `hook Stop ${tasks(['b3', 'shell', 'sleep 60 && echo finished'])}`);
+    await page.waitFor(`${background} === '1 in background'`, 'Working while it waits');
     await typeInTerminal(page, 'handback');
-    await page.waitFor(`!!${row}.querySelector('[aria-label=Working]')`, 'Working again');
+    await page.waitFor(
+      `!!${row}.querySelector('[aria-label=Working]')`,
+      'Working after the hand-back',
+    );
+    assert.equal((await notifications()).length, sent + 3, 'no Done before the last Stop');
     await typeInTerminal(page, `hook Stop ${tasks()}`);
     await page.waitFor(
       `${background} === null && !${row}.querySelector('[aria-label=Working]')`,
       'Done without a note',
     );
-    await mainProcess.waitFor(`globalThis.__notifications.length === ${sent + 3}`, 'Done, third');
+    await mainProcess.waitFor(`globalThis.__notifications.length === ${sent + 4}`, 'one Done');
+    assert.equal((await notifications()).at(-1)?.body, 'Fix login timeout');
     // The hand-backs got no prompt marker; the panel labels the turn after one.
-    await page.waitFor(`${promptTotal} === ${promptsBefore + 2}`, 'two typed prompts counted');
+    await page.waitFor(`${promptTotal} === ${promptsBefore + 4}`, 'four typed prompts counted');
     await pressKey(page, 'KeyR', CMD | MOD.shift);
     await page.waitFor(
       `[...document.querySelectorAll('[data-responses-panel] [data-response]')].at(-1)?.innerText.includes('The command finished.')`,
@@ -4010,7 +4047,7 @@ exec sleep 600
     // After a restart (spec §6.1): only the last workspace's project is
     // expanded, showing it; then a project expanded by hand stays so too.
     const restart = async (expected: string) => {
-      const running = await launchApp({ env: withDisplayEnv(fx.env), dev: devMode, electronArgs });
+      const running = await launchApp({ env: appEnv(), dev: devMode, electronArgs });
       app = running;
       const checks = sidebarChecks(running.page);
       await running.page.waitFor(

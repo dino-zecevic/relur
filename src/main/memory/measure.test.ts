@@ -53,6 +53,7 @@ describe('processLabel', () => {
     ['node', 'node /repo/node_modules/.bin/next dev', 'node dev server'],
     ['npm', 'npm run dev', 'npm dev server'],
     ['python3', 'python3 manage.py runserver 0.0.0.0:20060', 'python3 dev server'],
+    ['python3', 'python3 -m http.server 20061', 'python3 dev server'],
     ['node', 'node /x/@modelcontextprotocol/server-github/dist/index.js', 'node MCP server'],
     ['uvx', 'uvx mcp-server-fetch', 'uvx MCP server'],
     ['zsh', 'zsh', 'zsh'],

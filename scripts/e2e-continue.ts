@@ -80,8 +80,8 @@ while IFS= read -r line; do
   case "$line" in
     prompt) printf '\\342\\235\\257 Fix the login\\n'; hook UserPromptSubmit '{"prompt":"Fix the login"}' ;;
     permission) hook Notification '{"message":"Claude needs your permission to use Bash"}' ;;
-    # Done with a command still running in the background (spec §10.2).
-    background) hook Stop '{"background_tasks":[{"type":"shell","status":"running"}]}' ;;
+    # Done with a dev server still running in the background (spec §10.2).
+    background) hook Stop '{"background_tasks":[{"type":"shell","status":"running","command":"npm run dev"}]}' ;;
     *) printf '%s\\n' "$line" >> "$HOME/input-$name.txt" ;;
   esac
 done
@@ -354,7 +354,7 @@ exec sleep 600
       readConfig().profiles.find((p: { id: string }) => p.id === 'work').resume,
       undefined,
     );
-    // Delta (Personal) is Done with a command still running; Personal continues
+    // Delta (Personal) is Done with a dev server still running; Personal continues
     // at start, but stopped commands are never continued by themselves.
     await pressKey(page, 'Digit2', CMD);
     await open(page, 'Delta', 'notes');
