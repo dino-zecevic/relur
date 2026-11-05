@@ -1,7 +1,8 @@
 /**
  * The Guide's Markdown (components.md, Guide › Article blocks): headings,
  * paragraphs, lists, tables, code blocks, and `:::` blocks for callouts, key
- * rows, the status glyph legend and the building-blocks diagram. Inline:
+ * rows, the status glyph legend and the building-blocks diagram, and
+ * screenshots on a line of their own, `![alt](images/<name>.webp)`. Inline:
  * `code`, **bold**, [links](page#section) and <kbd>keys</kbd>. Only what the
  * Guide's own pages use; no HTML is passed through.
  */
@@ -23,6 +24,7 @@ export type Block =
   | { t: 'code'; lang: string; lines: string[] }
   | { t: 'callout'; kind: CalloutKind; title: string; blocks: Block[] }
   | { t: 'keys'; rows: { keys: string; label: string }[] }
+  | { t: 'image'; name: string; alt: string }
   | { t: 'glyphs' }
   | { t: 'diagram' };
 
@@ -59,6 +61,8 @@ export function parseInline(text: string): Inline[] {
 
 const CALLOUT_TITLE: Record<CalloutKind, string> = { tip: 'Tip', note: 'Note', warning: 'Warning' };
 const LIST_ITEM = /^(- |\d+\. )/;
+/** A screenshot: `images/<name>.webp`, shown as `<name>-dark.webp` or `<name>-light.webp`. */
+export const IMAGE = /^!\[([^\]]*)\]\(images\/([a-z0-9-]+)\.webp\)$/;
 const cells = (row: string) =>
   row
     .trim()
@@ -131,6 +135,13 @@ function parseBlocks(lines: string[]): { blocks: Block[]; title: string } {
       } else {
         throw new Error(`Unknown block ":::${kind}"`);
       }
+    } else if (line.startsWith('![')) {
+      flush();
+      const m = line.trim().match(IMAGE);
+      if (!m)
+        throw new Error(`An image must be ![alt](images/<name>.webp) on its own line: ${line}`);
+      blocks.push({ t: 'image', alt: m[1] as string, name: m[2] as string });
+      i++;
     } else if (line.startsWith('|')) {
       flush();
       const rows: string[][] = [];
@@ -164,6 +175,12 @@ function parseBlocks(lines: string[]): { blocks: Block[]; title: string } {
   return { blocks, title };
 }
 
+/** The screenshots in the page's blocks. */
+export const images = (blocks: Block[]): { name: string; alt: string }[] =>
+  blocks.flatMap((b) =>
+    b.t === 'image' ? [{ name: b.name, alt: b.alt }] : b.t === 'callout' ? images(b.blocks) : [],
+  );
+
 /** Every link target in the page's blocks, for checking them. */
 export function links(blocks: Block[]): string[] {
   const out: string[] = [];
@@ -188,6 +205,7 @@ export function links(blocks: Block[]): string[] {
 /** The page as plain text, for search. */
 export function plainText(markdown: string): string {
   return markdown
+    .replace(/^!\[.*$/gm, '')
     .replace(/^#+ /gm, '')
     .replace(/^:::.*$/gm, '')
     .replace(/^```.*$/gm, '')

@@ -519,6 +519,7 @@ Replaces the sidebar and main area. Content comes from Markdown files shipped wi
 | `:::keys` | One row per line `keys \| label`. Each chord is one kbd; `–` and `/` render as plain separators. 38px rows, keys column 40% |
 | `:::glyphs` | The status glyph legend with the real Status glyph component in a 28px tile, name, shape name, meaning |
 | `:::diagram` | Profile → Project → Workspace: three `bg-canvas border-line-strong` boxes (eyebrow, example, caption) joined by "has →"; wraps when narrow |
+| `![alt](images/<name>.webp)` | A screenshot on its own line: the `-dark` or `-light` file for the app's theme, at half its pixel size, max the column's width, `border-line rounded-lg`; the alt text below as a 12px `fg-subtle` caption |
 
 ### Search
 

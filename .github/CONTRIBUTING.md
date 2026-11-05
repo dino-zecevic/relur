@@ -32,8 +32,22 @@ A new git worktree of this repository has no `node_modules`: run `npm ci` there 
 | `npm run gen:notices` | Regenerate `THIRD_PARTY_NOTICES` after a dependency change |
 | `scripts/linux-check.sh` | Typecheck, tests, build and the e2e tests on Linux, in Docker (`PLATFORM=linux/amd64` for x64) |
 | `scripts/linux-package.sh` | The Linux AppImage and `.deb` for this machine's architecture, built in Docker |
+| `npm run guide:screenshots` | After `npm run build`: retakes the Guide's screenshots (see below) |
 
 Pushing a version tag runs `.github/workflows/release.yml`, which builds and publishes a GitHub Release. Packaging details are in the spec, §15.4 and §15.6.
+
+## Guide screenshots
+
+Some Guide pages show a screenshot, `![alt](images/<name>.webp)` on a line of its own, with a dark and a light file in `src/renderer/src/guide/images/`. `scripts/guide-screenshots.ts` takes them all from the production build, with made-up projects, tickets and people in a throwaway home folder and a stand-in for `claude`. It never touches your own settings, repositories or Claude.
+
+```sh
+npm run build
+npm run guide:screenshots                                     # all of them
+npm run guide:screenshots -- --only=sidebar,home-overview     # some
+npm run guide:screenshots -- --out=/tmp/shots                 # elsewhere, to compare first
+```
+
+Retake them when the screens they show change. Look at each one in both themes before committing: only clocks ("for 2 min") change from run to run. To add one, set the scene and call `shoot()` in the script, put the image line with an alt text that says what the screenshot shows in its page, and run `npm run check`: its tests check that every image has both files and an alt text, that every file is used, and that each stays under 150 KB.
 
 ## Rules for a change
 

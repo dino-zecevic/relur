@@ -29,6 +29,7 @@ import {
   pendingNotice,
   type SettingsMigration,
 } from './legacy/settings';
+import { parseFixedMemory } from './memory/fixed';
 import { readProcessTable } from './memory/processes';
 import { MemoryMonitor } from './memory/service';
 import { installAppMenu } from './menu';
@@ -575,6 +576,8 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
           .getAppMetrics()
           .map((m) => ({ pid: m.pid, fallbackBytes: m.memory.workingSetSize * 1024 })),
       visible: () => BrowserWindow.getAllWindows().some((w) => w.isVisible() && !w.isMinimized()),
+      // Fixed numbers for the Guide's screenshots; scripted test runs only.
+      fixed: testWindows() ? parseFixedMemory(process.env[envVar('TEST_MEMORY')]) : null,
     });
     memory = monitor;
     host.onExit(() => monitor.sessionsChanged());

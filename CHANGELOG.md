@@ -4,6 +4,10 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- Screenshots in the Guide: the sidebar, Home, New workspace with a task lookup, the Changes and Responses panels, the memory panel, a suspended workspace, a workflow gate, Edit profile and a workspace across repositories, each in the app's dark or light theme.
+
 ### Changed
 
 - Idle Claude sessions are now suspended after 10 minutes by default, to save memory; they resume in the same conversation when you open them. Profiles that never changed **Suspend idle sessions** get 10 minutes after the update, and Relur says so once, with **Settings** to change it in **Edit profile › General**. A profile where you chose a time keeps it, and choosing **Off** now stays Off.

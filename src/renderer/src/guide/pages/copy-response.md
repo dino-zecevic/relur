@@ -2,6 +2,8 @@
 
 Every Claude tab has a **Responses** button at the right of its bar <kbd>{{key:responses}}</kbd>. It opens a panel beside the terminal with one entry for each prompt you sent in the conversation, oldest first and the newest at the bottom: the prompt, and everything Claude wrote in answer, until your next prompt. Each entry is shown formatted, as Markdown, and has its own **Copy**, which copies all of it exactly as Claude wrote it, Markdown included.
 
+![The Responses panel beside the terminal: three entries, one for each prompt, each with its time and Copy; the last one is expanded with Claude's whole answer.](images/responses-panel.webp)
+
 ## Parts of an answer
 
 While it works, Claude often writes a few lines, runs tools, then writes more. Those messages are the **parts** of one entry, in order, with a thin line between them where Claude worked. Prompts you didn't type yourself count too: a workflow's answer button and **Continue** send a prompt for you, and it gets its own entry.

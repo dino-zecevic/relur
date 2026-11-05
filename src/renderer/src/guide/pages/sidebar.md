@@ -2,6 +2,8 @@
 
 The sidebar shows the profile you're in: its name and number of workspaces, **Home** <kbd>{{key:home}}</kbd>, its projects with their workspaces, and **Add project** <kbd>{{key:addProject}}</kbd> at the bottom. Click a project's name for its [project view](add-project#the-project-view), a workspace for the [workspace view](workspace-view). Hovering a project row shows a **+** that starts a [new workspace](new-workspace) in it.
 
+![The sidebar of a Work profile: Home, then web-app, api-service and shared-ui with their workspaces. One waits at the Spec review gate, one is suspended, one is working, one is done and one needs permission; ↗ Linked rows hold workspaces linked in from other projects.](images/sidebar.webp)
+
 Right-click a project for **Remove from <profile>…**. Right-click a workspace for:
 
 - **Open in editor**: its worktree in your [editor](open-in-editor), the same as the tab bar's button;

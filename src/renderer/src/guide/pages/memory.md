@@ -32,6 +32,8 @@ Click it (or Tab to it and press Enter) for a panel with:
 
 Esc or a click outside closes the panel.
 
+![The memory panel above the status bar: 2.4 GB of 16 GB, split into Claude sessions and this app, one session suspended, and the largest workspaces; ABC-142 uses 1.5 GB, most of it a node dev server.](images/memory-panel.webp)
+
 ## In the project view
 
 The project's **Workspaces** table has a **Memory** column. Hover a number to see the split; click the column's header to sort by it, largest first, then smallest first, then back to the usual order. Workspaces without a running Claude have no number.

@@ -58,6 +58,8 @@ For Claude started with **Start Claude here**, right-click its tab in the projec
 - **Start Claude here** tabs: **Suspended** after the name.
 - **Memory:** a suspended session uses none and isn't counted. The panel that opens from the status bar's **Memory** lists the suspended sessions by name, in every profile (with the profile's name when it isn't the one shown), and the project view says how many. See [Memory](memory).
 
+![The Workspaces table of api-service: ABC-133 is Done (unread) · Suspended and has no memory; ABC-142 is working and uses 1.5 GB.](images/suspended-workspace.webp)
+
 ## Why one isn't suspended
 
 In the project view's **Workspaces** table, hover a workspace's status. While its Claude runs, the tooltip says why it isn't suspended, for example "Not suspended: a draft in the prompt", or when it will be: "Suspended in 3 min if it stays idle". The reasons are the conditions above: shown in a window, Claude isn't idle, background work running, a draft in the prompt, no conversation yet, Keep Claude Running is on.

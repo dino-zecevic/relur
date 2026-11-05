@@ -2,8 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { formatShortcut, SHORTCUTS, shortcutsByGroup } from '@shared/shortcuts';
 import { describe, expect, it } from 'vitest';
-import { buildPages, fill, headings, isGuideAction, pageFiles, SECTIONS } from './content';
-import { links, parsePage } from './markdown';
+import {
+  buildPages,
+  fill,
+  headings,
+  imageFiles,
+  isGuideAction,
+  pageFiles,
+  SECTIONS,
+} from './content';
+import { images, links, parsePage } from './markdown';
 
 const files = pageFiles();
 
@@ -165,5 +173,39 @@ describe('Guide placeholders', () => {
 
   it('defines every shortcut with at least one chord', () => {
     for (const [id, s] of Object.entries(SHORTCUTS)) expect(s.chords.length, id).toBeGreaterThan(0);
+  });
+});
+
+describe('the Guide screenshots', () => {
+  const pages = buildPages(files, true);
+  const used = pages.flatMap((p) => images(p.blocks).map((i) => ({ page: p.id, ...i })));
+  const onDisk = imageFiles();
+
+  it('has a dark and a light file and alt text for every screenshot a page shows', () => {
+    for (const { page, name, alt } of used) {
+      expect(onDisk[name]?.dark, `${page}: ${name}-dark.webp`).toBeTruthy();
+      expect(onDisk[name]?.light, `${page}: ${name}-light.webp`).toBeTruthy();
+      expect(alt.trim().length, `${page}: alt text of ${name}`).toBeGreaterThan(10);
+    }
+  });
+
+  it('shows every screenshot file somewhere, each once', () => {
+    const names = used.map((u) => u.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(Object.keys(onDisk).sort()).toEqual([...names].sort());
+  });
+
+  it('keeps every file small', () => {
+    const dir = path.join(__dirname, 'images');
+    for (const file of fs.readdirSync(dir)) {
+      expect(fs.statSync(path.join(dir, file)).size, file).toBeLessThan(150 * 1024);
+    }
+  });
+
+  it('parses a screenshot only on a line of its own', () => {
+    expect(parsePage('# T\n\n![The sidebar](images/sidebar.webp)\n').blocks).toEqual([
+      { t: 'image', name: 'sidebar', alt: 'The sidebar' },
+    ]);
+    expect(() => parsePage('![x](sidebar.png)')).toThrow(/images/);
   });
 });

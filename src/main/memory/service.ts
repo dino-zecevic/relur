@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import { MEMORY_INTERVAL_MS, type MemorySnapshot, type SessionMemory } from '@shared/memory';
 import type { SessionInfo } from '@shared/terminal-protocol';
+import type { FixedMemory } from './fixed';
 import { appMemory, measureSession, processTree } from './measure';
 import type { ProcessEntry } from './processes';
 
@@ -18,6 +19,8 @@ export interface MemoryMonitorOptions {
   /** The machine's total RAM; os.totalmem() by default. */
   totalMemory?: () => number;
   intervalMs?: number;
+  /** Fixed numbers instead of measuring, for scripted runs only (TEST_MEMORY). */
+  fixed?: FixedMemory | null;
 }
 
 /**
@@ -73,6 +76,31 @@ export class MemoryMonitor {
   }
 
   private async measure(): Promise<void> {
+    const fixed = this.options.fixed;
+    if (fixed) {
+      this.snapshot = {
+        at: Date.now(),
+        sessions: this.options.sessions().flatMap(({ info }) => {
+          const label = this.options.label(info);
+          const numbers = fixed.sessions[label];
+          if (!numbers) return [];
+          return [
+            {
+              sessionId: info.id,
+              profileId: info.profileId,
+              projectId: info.projectId,
+              workspaceId: info.workspaceId,
+              label,
+              ...numbers,
+            },
+          ];
+        }),
+        app: fixed.app,
+        total: fixed.total,
+      };
+      this.events.emit('change');
+      return;
+    }
     let entries: ProcessEntry[];
     try {
       entries = await this.options.readProcesses();

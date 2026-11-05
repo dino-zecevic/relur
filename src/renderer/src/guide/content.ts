@@ -16,7 +16,9 @@
  *   {{linuxExe}}                                          the executable and desktop entry name on Linux
  *   {{mac}}…{{/mac}}  {{other}}…{{/other}}                text for macOS only, or for Linux and Windows
  *
- * A link to one of `GUIDE_ACTIONS` (`app:…`) runs that action.
+ * A link to one of `GUIDE_ACTIONS` (`app:…`) runs that action. A screenshot,
+ * `![alt](images/<name>.webp)`, has a dark and a light file in ./images
+ * (scripts/guide-screenshots.ts).
  *
  * The Keyboard shortcuts page has `{{shortcuts}}`, generated from the same
  * definitions.
@@ -190,4 +192,21 @@ export function pageFiles(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(modules).map(([file, text]) => [file.replace(/^.*\/|\.md$/g, ''), text]),
   );
+}
+
+/** The screenshots shipped with the app, by name: their dark and light URLs. */
+export function imageFiles(): Record<string, { dark?: string; light?: string }> {
+  const modules = import.meta.glob('./images/*.webp', {
+    query: '?url',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+  const out: Record<string, { dark?: string; light?: string }> = {};
+  for (const [file, url] of Object.entries(modules)) {
+    const m = file.match(/([a-z0-9-]+)-(dark|light)\.webp$/);
+    if (!m) throw new Error(`A Guide image must be <name>-dark.webp or <name>-light.webp: ${file}`);
+    const name = m[1] as string;
+    out[name] = { ...out[name], [m[2] as 'dark' | 'light']: url };
+  }
+  return out;
 }

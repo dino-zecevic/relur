@@ -64,6 +64,8 @@ The **title field** names the task. A workspace you created with a key alone, wi
 - At a step, **Continue** <kbd>{{key:continueWorkflow}}</kbd> types the Continue prompt into Claude and presses Enter. It shows only while Claude is idle.
 - At a gate there's no Continue: the skill waits for your own decision. **Review** opens the status file, and the gate's answer button, like **Approve spec**, types its text into Claude, like "I approve the spec." Without an answer button, answer in Claude's tab: <kbd>{{key:continueWorkflow}}</kbd> at a gate takes you there, with the terminal in focus.
 
+![A workspace's header at a gate: the stepper from Draft to Done with Spec review highlighted, the gate's hint, and Review and Approve spec on the right.](images/workflow-gate.webp)
+
 ## The status file in the workspace
 
 A workspace with a status file gets a tab for it after its terminals, named with the **Document label**. It shows the file as formatted text, read-only, and follows it as the skill writes it.

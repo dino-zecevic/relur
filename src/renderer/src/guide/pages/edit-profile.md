@@ -2,6 +2,8 @@
 
 Right-click a profile tab and choose **Edit profile…**. It has four tabs: **General**, with the settings below, **Skills**, with the profile's [skill sources](skills#skill-sources), **Workflow**, with its [workflow](workflows#setting-it-up) and its [Start prompt](workflows#the-start-prompt), and **Task lookup**, with its [task lookup](workflows#task-lookup). General saves with **Save**; Workflow and Task lookup have their own save buttons.
 
+![Edit profile on its General tab: name, color, the read-only Claude account folder with who is signed in, commit identity and pull request commands.](images/edit-profile.webp)
+
 | Setting | What it does |
 | --- | --- |
 | Name | Shown on the tab |

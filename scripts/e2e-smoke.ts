@@ -443,6 +443,23 @@ exec sleep 600
       await page.eval<string>(`document.querySelector('[data-guide-article]').innerText`),
       /\.worktrees/,
     );
+    // A screenshot (spec §6.12): the variant of the app's theme is the one shown, and loaded.
+    await page.eval(`document.querySelector('[data-guide-search]').select()`);
+    await page.send('Input.insertText', { text: 'Overview' });
+    await page.waitFor(`!!document.querySelector('[data-guide-result="home"]')`, 'Home found');
+    await page.eval(`document.querySelector('[data-guide-result="home"]').click()`);
+    await page.waitFor(`(${article}) === 'home'`, 'the Home page');
+    const shownImage = `[...document.querySelectorAll('[data-guide-image]')].filter((i) => i.offsetParent).map((i) => i.complete && i.naturalWidth > 0 ? i.dataset.guideImage : 'not loaded').join()`;
+    for (const theme of ['dark', 'light']) {
+      await mainProcess.eval(
+        `process.mainModule.require('electron').nativeTheme.themeSource = '${theme}'`,
+      );
+      await page.waitFor(`document.documentElement.dataset.theme === '${theme}'`, theme);
+      await page.waitFor(`${shownImage} === 'home-overview-${theme}'`, `the ${theme} screenshot`);
+    }
+    await mainProcess.eval(
+      `process.mainModule.require('electron').nativeTheme.themeSource = 'system'`,
+    );
     // Back to the profile, then a deep link from the status bar's usage meter.
     await clickLabel(page, 'Select Work');
     await page.waitFor(`!document.querySelector('[data-guide]')`, 'the Guide to close');

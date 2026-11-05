@@ -41,6 +41,8 @@ Every terminal of the workspace gets the workspace's variables, describing the p
 
 The header shows the primary repository's chip in full: its name, **primary**, `branch ← base`, unpushed commits and a failed setup; hover it for its worktree path. The branch is shown only there, since every repository of the workspace is on it. Each linked repository follows on the same line as a chip with just its name, and a mark for anything that needs you: **✕** when its setup failed, **◌** while its setup runs, **PR** (coloured by its state) when it has a pull request. If they don't all fit, the rest go under **+n more**, which lists them.
 
+![A workspace across three repositories: web-app's chip in full, marked primary, with its branch and base, then the linked api-service and shared-ui by name.](images/linked-workspace.webp)
+
 - **Hover a linked chip**, or move to it with <kbd>Tab</kbd>, to see its branch and base branch (each repository has its own base, for example `master` in one and `dev` in another), its worktree folder, its setup and its pull request.
 - **Click it**, or press <kbd>↵</kbd>, for its menu: **Open in editor** (that repository, in its project's editor), **New shell in <repo>**, **{{reveal}}**, **Show in Changes** (the Changes panel, at that repository's section) and **Unlink <repo>…**. The sidebar shows a **+n** after the workspace's title, and every linked project lists the workspace too, as a muted `↗` row that opens it, and counts it as `↗ n` on its row ([The sidebar](sidebar#the-counts-on-a-project)).
 

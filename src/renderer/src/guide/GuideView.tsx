@@ -10,6 +10,7 @@ import {
   buildPages,
   type GuidePage,
   headings,
+  imageFiles,
   isGuideAction,
   pageFiles,
   SECTIONS,
@@ -22,6 +23,9 @@ export function guidePages(): GuidePage[] {
   built ??= buildPages(pageFiles(), isMac);
   return built;
 }
+
+/** The screenshots' URLs, by name. */
+const images = imageFiles();
 
 /** Where the Guide opens: a page and, for a deep link, one of its sections. */
 export interface GuideTarget {
@@ -376,7 +380,44 @@ function BlockView({ block, onLink }: { block: Block; onLink: (href: string) => 
       );
     case 'diagram':
       return <Diagram />;
+    case 'image':
+      return <Screenshot name={block.name} alt={block.alt} />;
   }
+}
+
+/**
+ * A screenshot in the variant of the app's theme (spec §6.12), at half its
+ * pixel size: they are taken at 2x. Its alt text is the caption too.
+ */
+function Screenshot({ name, alt }: { name: string; alt: string }) {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const files = images[name];
+  const img = (theme: 'dark' | 'light', className: string) => (
+    <img
+      src={files?.[theme]}
+      alt={alt}
+      data-guide-image={`${name}-${theme}`}
+      width={size?.width}
+      height={size?.height}
+      onLoad={(e) =>
+        setSize({
+          width: e.currentTarget.naturalWidth / 2,
+          height: e.currentTarget.naturalHeight / 2,
+        })
+      }
+      className={`h-auto max-w-full rounded-lg border border-line ${className}`}
+    />
+  );
+  return (
+    <figure className="flex flex-col items-start gap-1.5">
+      {img('light', 'dark:hidden')}
+      {img('dark', 'hidden dark:block')}
+      {/* The same words as the image's alt text, so screen readers skip it. */}
+      <figcaption aria-hidden className="text-[12px] leading-[1.45] text-fg-subtle">
+        {alt}
+      </figcaption>
+    </figure>
+  );
 }
 
 /** Text with the query's matches marked. */

@@ -11,6 +11,8 @@
 
 Pick a file to see its diff, read-only. **Unified** and **Side by side** above the diff choose how it's shown; the choice stays for every workspace, also after a restart. Side by side needs room: in a narrow panel the diff stays unified and says so, until you widen the panel or use Full view. <kbd>↑</kbd> <kbd>↓</kbd> move between files; <kbd>Esc</kbd> goes back to the terminal.
 
+![The Changes panel beside the Claude terminal: three uncommitted files, the diff of src/routes/login.ts with its added and removed lines, and the commit message with Commit 3 files below.](images/changes-panel.webp)
+
 Drag the panel's left edge to make it wider or narrower; double-click the edge for the default width. The width stays after a restart. **Full view** in the panel's header, or <kbd>{{key:changesFullView}}</kbd>, gives it the whole workspace area, with the terminal hidden for the moment; **Side panel**, <kbd>{{key:changesFullView}}</kbd> or <kbd>Esc</kbd> puts it back.
 
 ### More room for the diff
