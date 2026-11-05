@@ -50,8 +50,10 @@ const MINUTE_MS = 1000;
  * A stand-in for Claude Code's classic renderer, in Node (it draws an input
  * box, redraws on a resize and reads bracketed pastes). Each prompt runs
  * UserPromptSubmit while the input box still shows it, then is printed as
- * `❯ <prompt>` with an answer that repeats its first line, written to the
- * transcript, then Stop. `--resume <id>` reprints that conversation, then
+ * Claude Code 2.1.318 prints it (recorded live): `❯ <prompt>` on a grey band,
+ * wrapped at spaces by Claude itself, further lines indented two spaces,
+ * every line padded with spaces to the full width; then an answer that
+ * repeats its first line, written to the transcript, then Stop. `--resume <id>` reprints that conversation, then
  * SessionStart says `resume`. Scripted tests never start the real one.
  */
 const FAKE_CLAUDE = `
@@ -100,9 +102,29 @@ const boxRows = () =>
   1 + draft.split('\\n').reduce((n, l, i) => n + Math.max(1, Math.ceil((l.length + 2) / cols())), 0);
 const box = () => out('\\u2500'.repeat(cols()) + '\\r\\n\\u276f ' + draft.split('\\n').join('\\r\\n  '));
 const unbox = () => out('\\r\\x1b[' + (boxRows() - 1) + 'A\\x1b[J');
+// A sent prompt, drawn at the width of the moment (a reprint wraps it anew).
+const wrap = (text, width) => text.split('\\n').flatMap((para) => {
+  const rows = [];
+  let rest = para;
+  while (rest.length > width) {
+    const at = rest.lastIndexOf(' ', width - 1);
+    const cut = at > 0 ? at + 1 : width;
+    rows.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  return [...rows, rest];
+});
+const drawPrompt = (text) =>
+  '\\x1b[48;2;55;55;55m' +
+  wrap(text, cols() - 2)
+    .map((row, i) => (i === 0 ? '\\x1b[38;2;153;153;153m\\u276f ' : '  ') +
+      '\\x1b[38;2;255;255;255m' + row + '\\x1b[39m' + ' '.repeat(Math.max(0, cols() - 2 - row.length)))
+    .join('\\r\\n') +
+  '\\x1b[49m';
+const draw = (line) => (typeof line === 'string' ? line : drawPrompt(line.prompt));
 const say = (lines) => {
   unbox();
-  for (const line of lines) out(line + '\\r\\n');
+  for (const line of lines) out(draw(line) + '\\r\\n');
   screen.push(...lines);
   fs.writeFileSync(screenFile, JSON.stringify(screen));
   box();
@@ -111,7 +133,7 @@ const say = (lines) => {
 const reprint = () => {
   out('\\x1b[2J\\x1b[3J\\x1b[H');
   out('fake claude ' + sid + '\\r\\n\\r\\n');
-  for (const line of screen) out(line + '\\r\\n');
+  for (const line of screen) out(draw(line) + '\\r\\n');
   box();
 };
 const entry = (e) => fs.appendFileSync(transcript, JSON.stringify(e) + '\\n');
@@ -127,7 +149,7 @@ const submit = () => {
   setTimeout(() => {
     const [first, ...more] = shown.split('\\n');
     const answer = ['Done. In short:', first, '- ' + first + ', as asked'];
-    say(['\\u276f ' + first, ...more.map((l) => '  ' + l), '', '\\u23fa ' + answer[0], ...answer.slice(1).map((l) => '  ' + l), '']);
+    say([{ prompt: shown }, '', '\\u23fa ' + answer[0], ...answer.slice(1).map((l) => '  ' + l), '']);
     const text = answer.join('\\n');
     entry({ type: 'assistant', sessionId: sid, message: { role: 'assistant', content: [{ type: 'text', text }] } });
     hook('Stop', { last_assistant_message: text });

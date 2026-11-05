@@ -133,6 +133,38 @@ describe('locate', () => {
     expect(text.findPrompt('to four', text.endOf(5))).toBeNull();
   });
 
+  it('finds prompts as Claude Code 2.1.318 shows them: padded to the width, wrapped by Claude', () => {
+    // From the live check: each prompt line keeps the spaces Claude pads it with.
+    const pad = (line: string) => line.padEnd(100, ' ');
+    const text = new LineText([
+      pad(
+        '❯ Reply with only the word yes. This prompt is deliberately long so that it wraps past the right',
+      ),
+      pad('  edge of a one hundred column terminal window'),
+      '',
+      '⏺ yes',
+      '',
+      pad('❯ Reply with only the word no.'),
+      pad('  This is the second line of the prompt'),
+      '',
+      '⏺ no',
+      '',
+      '─'.repeat(100),
+      '❯ ',
+    ]);
+    const before = text.endOf(9);
+    expect(
+      text.findPrompt(
+        'Reply with only the word yes. This prompt is deliberately long so that it wraps past the right edge of a one hundred column terminal window',
+        before,
+      )?.line,
+    ).toBe(0);
+    expect(
+      text.findPrompt('Reply with only the word no.\nThis is the second line of the prompt', before)
+        ?.line,
+    ).toBe(5);
+  });
+
   it('finds a response whose Markdown shows differently, by its last line', () => {
     // As Claude Code shows a table, a link (with its address) and a code block.
     const text = new LineText([
