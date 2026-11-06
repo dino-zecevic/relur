@@ -82,6 +82,9 @@ const MIGRATIONS: string[] = [
   // project for its main checkout's Claude.
   `ALTER TABLE workspaces ADD COLUMN keep_running INTEGER NOT NULL DEFAULT 0;
    CREATE TABLE kept_main_checkouts (project_id TEXT PRIMARY KEY);`,
+  // Where a repository's branch is merged, as last checked (spec §14.2).
+  `ALTER TABLE workspaces ADD COLUMN merged_into TEXT;
+   ALTER TABLE workspace_repos ADD COLUMN merged_into TEXT;`,
 ];
 
 export type StateDb = Database.Database;

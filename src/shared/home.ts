@@ -1,5 +1,12 @@
 import { needsYou, type WorkspaceState } from './status';
-import { type PrStatus, type Workspace, workspaceMerged } from './workspaces';
+import {
+  mergedText,
+  type PrStatus,
+  prMerged,
+  type Workspace,
+  type WorkspaceRepo,
+  workspaceMerged,
+} from './workspaces';
 
 /**
  * Home's Overview (spec §6.7): which of a profile's workspaces show in which
@@ -120,6 +127,12 @@ export function prText(pr: PrStatus): string {
       return 'Likely merged: the branch is gone from the remote';
   }
 }
+
+/** A merged repository's row text: its merged PR's, else where its branch is merged (§14.2). */
+export const mergedLabel = (repo: WorkspaceRepo): string =>
+  repo.pr && prMerged(repo.pr)
+    ? prText(repo.pr)
+    : mergedText(repo.merged ?? 'base', repo.baseBranch);
 
 /** "working for 4 min", "working for 1 h 5 min", "working for less than a minute". */
 export function workingFor(since: string | null, now = Date.now()): string {

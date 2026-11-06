@@ -47,6 +47,7 @@ const workspace = (id: string, claudeSessionId: string | null): Workspace => ({
       baseBranch: 'main',
       pr: null,
       hasCommits: false,
+      merged: null,
       setupError: null,
     },
   ],

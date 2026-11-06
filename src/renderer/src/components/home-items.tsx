@@ -1,5 +1,6 @@
 import {
   type HomeSection,
+  mergedLabel,
   permissionTool,
   prNumber,
   prText,
@@ -403,7 +404,7 @@ export function useHomeItems({
       glyph = 'exited';
       title = 'muted';
       const merged = workspaceMerged(w);
-      parts.push({ text: merged ? prText(merged) : 'Merged' });
+      parts.push({ text: merged ? mergedLabel(merged) : 'Merged' });
       if (!card) {
         hover.push(
           <Action

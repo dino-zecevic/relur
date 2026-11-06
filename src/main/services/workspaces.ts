@@ -24,6 +24,7 @@ import {
   workspaceRepo,
 } from '@shared/workspaces';
 import { type AppLog, PhaseTimer } from '../app-log';
+import { refreshMerged } from '../changes/finish';
 import { baseRef } from '../changes/service';
 import type { ConfigStore } from '../config/store';
 import type { WorkspaceRecords } from '../db/workspaces';
@@ -405,6 +406,7 @@ export class WorkspaceService {
         baseBranch: t.base,
         pr: null,
         hasCommits: false,
+        merged: null,
         setupError: null,
       })),
       createdAt: now,
@@ -557,6 +559,7 @@ export class WorkspaceService {
           baseBranch: base,
           pr: null,
           hasCommits: false,
+          merged: null,
           setupError: null,
         },
       ],
@@ -1278,6 +1281,7 @@ export class WorkspaceService {
         .filter((s) => s.workspaceId === workspaceId && s.status === 'running').length,
       worktreeMissing: main.worktreeMissing,
       prOpen: main.prOpen,
+      merged: main.merged,
     };
   }
 
@@ -1289,16 +1293,22 @@ export class WorkspaceService {
     const repoPath = expandHome(project.repoPath);
     const worktreeMissing = !fs.existsSync(repo.worktreePath);
     const branchExists = await git.localBranchExists(repoPath, workspace.branch);
+    // A merged branch's commits are safe in the base: none count as unpushed (§14.2).
+    const merged = branchExists
+      ? await refreshMerged(git, this.records, workspace, repo, project)
+      : null;
     return {
       projectId: repo.projectId,
       primary: repo.primary,
       worktreePath: repo.worktreePath,
       uncommitted: worktreeMissing ? [] : await git.status(repo.worktreePath),
-      unpushed: branchExists
-        ? await git.unpushedCount(repoPath, workspace.branch, project.remote !== null)
-        : 0,
+      unpushed:
+        branchExists && !merged
+          ? await git.unpushedCount(repoPath, workspace.branch, project.remote !== null)
+          : 0,
       worktreeMissing,
       prOpen: repo.pr?.state === 'open' || repo.pr?.state === 'draft',
+      merged,
     };
   }
 

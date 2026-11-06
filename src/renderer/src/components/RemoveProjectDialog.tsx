@@ -179,6 +179,10 @@ export function RemoveProjectDialog({
                               name={name(r.projectId)}
                               check={r}
                               branch={workspace.branch}
+                              base={
+                                workspace.repos.find((x) => x.projectId === r.projectId)
+                                  ?.baseBranch ?? workspace.baseBranch
+                              }
                               remote={remoteOf(r.projectId)}
                               alsoDeleteBranch={Boolean(deleteBranch[key])}
                               onAlsoDeleteBranch={(value) =>

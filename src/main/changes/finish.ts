@@ -7,6 +7,7 @@ import {
 } from '@shared/schemas';
 import { shellQuote } from '@shared/shell';
 import {
+  type MergedInto,
   type PrStatus,
   type Workspace,
   type WorkspaceRepo,
@@ -16,6 +17,7 @@ import type { ConfigStore } from '../config/store';
 import type { WorkspaceRecords } from '../db/workspaces';
 import { resolveExecutable } from '../env/which';
 import { Git, GitError } from '../git/git';
+import { expandHome } from '../paths';
 import type { TerminalService } from '../services/terminals';
 import { type CommandResult, runCommands } from '../worktrees/setup';
 import { baseRef, fileDiff, workspaceChanges } from './service';
@@ -156,6 +158,8 @@ export class FinishService {
   async state(workspaceId: string, projectId: string | null = null): Promise<FinishState> {
     const { workspace, repo, project, profile, git } = await this.context(workspaceId, projectId);
     const dir = repo.worktreePath;
+    // Home reads this every 15 s: a local merge moves the workspace to Clean up (§6.7, §14.2).
+    await refreshMerged(git, this.records, workspace, repo, project).catch(() => {});
     const uncommitted = (await git.status(dir)).length;
     const upstream = project.remote
       ? await git.revParse(dir, `refs/remotes/${project.remote}/${workspace.branch}`)
@@ -295,14 +299,12 @@ export class FinishService {
     return running;
   }
 
-  /** Every workspace with a remote, one after another (the 5-minute round and focus). */
+  /**
+   * Every workspace, one after another (the 5-minute round and focus): its
+   * PRs where it has a remote, and where each branch is merged (§14.2).
+   */
   async refreshAll(): Promise<void> {
     for (const workspace of this.records.list()) {
-      const projects = this.config.get().config?.projects ?? [];
-      const withRemote = workspace.repos.some(
-        (r) => projects.find((p) => p.id === r.projectId)?.remote,
-      );
-      if (!withRemote) continue;
       await this.refreshPr(workspace.id).catch(() => {});
     }
   }
@@ -325,7 +327,11 @@ export class FinishService {
 
   private async checkRepoPr(workspaceId: string, projectId: string): Promise<PrStatus | null> {
     const { workspace, repo, project, profile, git } = await this.context(workspaceId, projectId);
-    if (!project.remote) return null;
+    if (!project.remote) {
+      // Where its branch is merged, for Home, also without a remote (§14.2).
+      await refreshMerged(git, this.records, workspace, repo, project).catch(() => {});
+      return null;
+    }
     const settings = prSettings(profile, project);
     const dir = repo.worktreePath;
     let pr: PrStatus | null;
@@ -345,6 +351,9 @@ export class FinishService {
     const head = await git.revParse(dir, 'HEAD');
     const start = this.records.startCommit(workspace.id, projectId);
     const hasCommits = head !== null && start !== null && head !== start;
+    // After the PR check's fetch, so `<remote>/<base>` is fresh (§14.2); before
+    // the PR is stored, so a check joined once the badge changes is a new one.
+    await refreshMerged(git, this.records, workspace, repo, project).catch(() => {});
     this.records.setPr(workspace.id, pr, { projectId, hasCommits });
     return pr;
   }
@@ -464,4 +473,30 @@ export function parsePrStatus(output: string): PrStatus | null {
     url: typeof v.url === 'string' ? v.url : null,
     source: 'command',
   };
+}
+
+/**
+ * Checks where a repository's branch is merged (spec §14.2) and stores it
+ * with whether the branch has commits of its own; returns it.
+ */
+export async function refreshMerged(
+  git: Git,
+  records: WorkspaceRecords,
+  workspace: Workspace,
+  repo: WorkspaceRepo,
+  project: Project,
+): Promise<MergedInto | null> {
+  const repoPath = expandHome(project.repoPath);
+  const start = records.startCommit(workspace.id, repo.projectId);
+  const head = await git.revParse(repoPath, `refs/heads/${workspace.branch}`);
+  const merged = await git.mergedInto(repoPath, {
+    branch: workspace.branch,
+    start,
+    base: repo.baseBranch,
+    remote: project.remote,
+  });
+  // Without a remote, nothing else records whether it has commits (§21.5).
+  const hasCommits = head === null || start === null ? repo.hasCommits : head !== start;
+  records.setMerged(workspace.id, repo.projectId, merged, hasCommits);
+  return merged;
 }

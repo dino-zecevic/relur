@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
+import type { MergedInto } from '@shared/workspaces';
 import type { Env } from '../env/scrub';
 
 /** The first line of git's error, without `fatal:` or `error:` (for notes). */
@@ -296,6 +297,40 @@ export class Git {
       ...others,
     ]);
     return Number(out.trim());
+  }
+
+  /**
+   * Where `branch` is merged (spec §14.2): it has commits of its own since
+   * `start`, and its tip is contained in `<remote>/<base>` (`base`) or only
+   * in the local base (`local`), or every one of its commits' changes is
+   * already there (`git cherry`, for rebased branches). Without a remote the
+   * local base is the base. Null when not merged, without commits of its
+   * own, or when its start isn't known.
+   */
+  async mergedInto(
+    repo: string,
+    {
+      branch,
+      start,
+      base,
+      remote,
+    }: { branch: string; start: string | null; base: string; remote: string | null },
+  ): Promise<MergedInto | null> {
+    const head = await this.revParse(repo, `refs/heads/${branch}`);
+    if (!head || !start || head === start) return null;
+    const contains = async (ref: string) => {
+      if (!(await this.revParse(repo, ref))) return false;
+      if ((await this.tryRun(repo, ['merge-base', '--is-ancestor', head, ref])) !== null)
+        return true;
+      // Rebased or cherry-picked: each of its own commits has an equivalent in the base.
+      const lines = ((await this.tryRun(repo, ['cherry', ref, head, start])) ?? '')
+        .split('\n')
+        .filter(Boolean);
+      return lines.length > 0 && lines.every((l) => l.startsWith('-'));
+    };
+    if (remote && (await contains(`refs/remotes/${remote}/${base}`))) return 'base';
+    if (await contains(`refs/heads/${base}`)) return remote ? 'local' : 'base';
+    return null;
   }
 
   async removeWorktree(repo: string, dir: string, force: boolean): Promise<void> {

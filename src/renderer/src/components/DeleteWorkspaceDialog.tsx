@@ -1,5 +1,5 @@
 import type { Project } from '@shared/schemas';
-import type { RepoDeleteCheck, Workspace } from '@shared/workspaces';
+import { mergedText, type RepoDeleteCheck, type Workspace } from '@shared/workspaces';
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { GuideLink } from '../guide/link';
@@ -38,6 +38,28 @@ export function PrimaryTag() {
 }
 
 /**
+ * "✓ Merged into main" (spec §14.2): the branch's commits are in its base,
+ * so none are unpushed; "Merged into your local main (not pushed yet)" when
+ * only the local base has them.
+ */
+export function MergedNote({
+  merged,
+  base,
+  className = '',
+}: {
+  merged: RepoDeleteCheck['merged'];
+  base: string;
+  className?: string;
+}) {
+  if (!merged) return null;
+  return (
+    <p data-merged-note={merged} className={`text-sm text-fg-muted ${className}`}>
+      <span className="text-diff-add">✓</span> {mergedText(merged, base)}
+    </p>
+  );
+}
+
+/**
  * One repository's card in Delete workspace, Unlink and Remove project
  * (spec §21.6): its warnings, or that it is clean, and its own "Also delete
  * the local branch" when it has unpushed commits.
@@ -46,6 +68,7 @@ export function RepoCard({
   name,
   check,
   branch,
+  base,
   remote,
   alsoDeleteBranch,
   onAlsoDeleteBranch,
@@ -53,6 +76,8 @@ export function RepoCard({
   name: string;
   check: RepoDeleteCheck;
   branch: string;
+  /** Its base branch, for "Merged into <base>". */
+  base: string;
   remote: string | null;
   alsoDeleteBranch: boolean;
   onAlsoDeleteBranch: (value: boolean) => void;
@@ -74,10 +99,13 @@ export function RepoCard({
           {check.worktreePath}
         </span>
       </div>
+      {check.merged ? <MergedNote merged={check.merged} base={base} className="px-3 py-2" /> : null}
       {clean ? (
-        <p className="px-3 py-2 text-sm text-fg-muted">
-          <span className="text-diff-add">✓</span> No uncommitted changes or unpushed commits
-        </p>
+        check.merged ? null : (
+          <p className="px-3 py-2 text-sm text-fg-muted">
+            <span className="text-diff-add">✓</span> No uncommitted changes or unpushed commits
+          </p>
+        )
       ) : (
         <div className="divide-y divide-st-permission/30 bg-st-permission/8">
           {check.uncommitted.length > 0 ? (
@@ -112,6 +140,10 @@ export function RepoCard({
     </div>
   );
 }
+
+/** A repository's base branch in the workspace (the workspace's own as a fallback). */
+const repoBase = (w: Workspace, projectId: string) =>
+  w.repos.find((r) => r.projectId === projectId)?.baseBranch ?? w.baseBranch;
 
 /** What deleting one repository's worktree does, from its check and the user's choices. */
 export const repoChoice = (
@@ -175,6 +207,7 @@ export function UnlinkDialog({
             name={project.name}
             check={data}
             branch={workspace.branch}
+            base={repoBase(workspace, project.id)}
             remote={project.remote}
             alsoDeleteBranch={alsoDeleteBranch}
             onAlsoDeleteBranch={setAlsoDeleteBranch}
@@ -304,6 +337,7 @@ export function DeleteWorkspaceDialog({
               name={repoName(r.projectId)}
               check={r}
               branch={workspace.branch}
+              base={repoBase(workspace, r.projectId)}
               remote={repoRemote(r.projectId)}
               alsoDeleteBranch={alsoDeleteBranches[r.projectId] ?? false}
               onAlsoDeleteBranch={(value) =>
@@ -399,6 +433,13 @@ export function DeleteWorkspaceDialog({
               <Warning title={`${plural(data.running, 'running session')} will be stopped`} />
             ) : null}
           </div>
+        ) : null}
+        {data?.merged ? (
+          <MergedNote
+            merged={data.merged}
+            base={workspace.baseBranch}
+            className={warnings ? 'mt-3' : ''}
+          />
         ) : null}
         {hasUnpushed ? (
           <label className="mt-3 flex items-center gap-2 text-md text-fg">
@@ -571,6 +612,7 @@ export function DeleteWorkspacesDialog({
                       name={name(r.projectId)}
                       check={r}
                       branch={w.branch}
+                      base={repoBase(w, r.projectId)}
                       remote={remote(r.projectId)}
                       alsoDeleteBranch={alsoDeleteBranch[key] ?? false}
                       onAlsoDeleteBranch={(value) =>

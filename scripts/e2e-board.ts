@@ -3,9 +3,11 @@
  * its memory per profile (also across a restart), the five columns following
  * the workspaces live, drag to delete (Esc, a drop elsewhere, the zone, the
  * dialog's Cancel and Delete), the keyboard (↑↓←→, ↵, Tab, Delete), Delete n
- * merged, a card unfolding on hover (after a rest, smoothly, none while the
- * pointer passes over, at once with reduced motion), and the quick reply: sent
- * to a waiting workspace and to a working
+ * merged, a branch merged only locally (Merged, and Delete workspace's
+ * "Merged into …" in place of the unpushed warning, spec §14.2), a card
+ * unfolding on hover (after a rest, smoothly, none while the pointer passes
+ * over, at once with reduced motion), and the quick reply: sent to a waiting
+ * workspace and to a working
  * one, resumed first for a suspended one, refused on a permission request
  * (Open instead) and over a draft. Runs with a throwaway HOME and a fake
  * `claude`.
@@ -634,6 +636,50 @@ exec sleep 600
     await submitDialog(page);
     await page.waitFor(`!${card(draft)}`, 'the card gone', 30_000);
     assert.equal(fs.existsSync(ws.draft?.tree as string), false, 'its worktree deleted');
+
+    // 8b. Merged locally (spec §14.2): a fast-forward into web's own main moves
+    // it to Merged without a PR, and Delete workspace says so instead of
+    // warning about unpushed commits; once pushed, "Merged into main".
+    await create('local', 'web', 'ABC-8 Merged here');
+    const localTree = ws.local?.tree as string;
+    fs.writeFileSync(path.join(localTree, 'local.txt'), 'x\n');
+    fx.git(localTree, 'add', '-A');
+    fx.git(localTree, 'commit', '-q', '-m', 'Add local');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'stop');
+    await waitState('local', 'Done');
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
+    await page.waitFor(`${columnOf(id('local'))} === 'ship'`, 'its commit to ship', 30_000);
+    fx.git(web, 'merge', '-q', '--ff-only', ws.local?.branch as string);
+    await page.waitFor(`${columnOf(id('local'))} === 'merged'`, 'merged locally', 40_000);
+    assert.match(
+      await page.eval<string>(`${card(id('local'))}.innerText`),
+      /Merged into your local main \(not pushed yet\)/,
+    );
+    await page.eval(`${card(id('local'))}.focus()`);
+    await pressKey(page, 'Backspace');
+    await page.waitFor(`${dialogText}.includes('Delete ABC-8')`, 'Delete workspace');
+    await page.waitFor(
+      `${dialogText}.includes('Merged into your local main (not pushed yet)')`,
+      'the merged line',
+    );
+    const localDialog = await page.eval<string>(dialogText);
+    assert.doesNotMatch(localDialog, /commits? not pushed|Also delete the local branch/);
+    // Other warnings stay: its Claude still runs.
+    assert.match(localDialog, /1 running session will be stopped/);
+    assert.doesNotMatch(localDialog, /Commit and push first/);
+    assert.match(localDialog, new RegExp(`and the local branch ${ws.local?.branch}`));
+    await screenshot(page, screenshotDir, 'b7-merged-locally.png');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+    fx.git(web, 'push', '-q', 'origin', 'main');
+    await page.eval(`${card(id('local'))}.focus()`);
+    await pressKey(page, 'Backspace');
+    await page.waitFor(`${dialogText}.includes('✓ Merged into main')`, 'merged into main');
+    await submitDialog(page);
+    await page.waitFor(`!${card(id('local'))}`, 'the card gone', 30_000);
+    assert.equal(fx.git(web, 'branch', '--list', ws.local?.branch as string), '', 'branch deleted');
 
     // 9. Personal: the Board too (it never chose), and a suspended Claude resumed for a reply.
     await clickLabel(page, 'Select Personal');

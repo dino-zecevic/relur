@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { WorkspaceState } from '@shared/status';
 import { type UnfinishedKind, unfinishedKind } from '@shared/unfinished';
-import type { PrStatus, Workspace, WorkspaceRepo } from '@shared/workspaces';
+import type { MergedInto, PrStatus, Workspace, WorkspaceRepo } from '@shared/workspaces';
 import { prepareOrSkip, type StateDb } from './state-db';
 
 interface Row {
@@ -33,6 +33,7 @@ interface Row {
   pr_source: string | null;
   setup_error: string | null;
   has_commits: number;
+  merged_into: string | null;
   unfinished: string | null;
   unfinished_at: string | null;
   unfinished_stopped: number;
@@ -48,6 +49,7 @@ interface RepoRow {
   base_branch: string;
   setup_error: string | null;
   has_commits: number;
+  merged_into: string | null;
   pr_state: string | null;
   pr_url: string | null;
   pr_source: string | null;
@@ -66,6 +68,9 @@ const toPr = (row: {
       }
     : null;
 
+const toMerged = (value: string | null): MergedInto | null =>
+  value === 'base' || value === 'local' ? value : null;
+
 const toRepo = (row: RepoRow): WorkspaceRepo => ({
   projectId: row.project_id,
   primary: false,
@@ -73,6 +78,7 @@ const toRepo = (row: RepoRow): WorkspaceRepo => ({
   baseBranch: row.base_branch,
   pr: toPr(row),
   hasCommits: row.has_commits === 1,
+  merged: toMerged(row.merged_into),
   setupError: row.setup_error,
 });
 
@@ -136,6 +142,7 @@ const toWorkspace = (row: Row, linked: WorkspaceRepo[] = []): Workspace => ({
       baseBranch: row.base_branch,
       pr: toPr(row),
       hasCommits: row.has_commits === 1,
+      merged: toMerged(row.merged_into),
       setupError: row.setup_error,
     },
     ...linked,
@@ -588,6 +595,21 @@ export class WorkspaceRecords {
       source: pr?.source ?? null,
       hasCommits: hasCommits === undefined ? null : hasCommits ? 1 : 0,
     });
+    if (result.changes > 0) this.events.emit('change');
+  }
+
+  /** Where a repository's branch is merged, as last checked (null: not), and whether it has commits. */
+  setMerged(
+    id: string,
+    projectId: string | null,
+    merged: MergedInto | null,
+    hasCommits: boolean,
+  ): void {
+    const { table, where } = this.repoTarget(id, projectId);
+    const result = this.prepare(
+      `UPDATE ${table} SET merged_into = @merged, has_commits = @hasCommits
+         WHERE ${where} AND (merged_into IS NOT @merged OR has_commits IS NOT @hasCommits)`,
+    ).run({ id, projectId, merged, hasCommits: hasCommits ? 1 : 0 });
     if (result.changes > 0) this.events.emit('change');
   }
 

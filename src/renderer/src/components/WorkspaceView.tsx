@@ -301,8 +301,8 @@ export function WorkspaceView({
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  const mergedPr = workspaceMerged(workspace);
-  const merged = mergedPr !== null;
+  const mergedRepo = workspaceMerged(workspace);
+  const merged = mergedRepo !== null;
   const runSetup = useMutation(trpc.workspaces.runSetup.mutationOptions({ onSuccess: onSelect }));
   const active = sessions.find((s) => s.id === activeId) ?? sessions[0] ?? null;
   const mainProject = projects.find((p) => p.id === workspace.projectId);
@@ -627,9 +627,11 @@ export function WorkspaceView({
           <span className="min-w-0 flex-1 truncate text-fg-muted">
             {linked
               ? `${workspace.branch} is merged in every repository with commits.`
-              : mergedPr?.state === 'merged'
-                ? `${workspace.branch} is merged into ${workspace.baseBranch}.`
-                : `${workspace.branch} was deleted on the remote, so it was likely merged.`}{' '}
+              : mergedRepo?.pr?.state === 'likely-merged' && !mergedRepo.merged
+                ? `${workspace.branch} was deleted on the remote, so it was likely merged.`
+                : mergedRepo?.merged === 'local' && mergedRepo.pr?.state !== 'merged'
+                  ? `${workspace.branch} is merged into your local ${workspace.baseBranch} (not pushed yet).`
+                  : `${workspace.branch} is merged into ${workspace.baseBranch}.`}{' '}
             Delete workspace?
           </span>
           <button type="button" className={button('secondary', 'sm')} onClick={onDelete}>

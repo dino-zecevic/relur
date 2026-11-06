@@ -9,6 +9,10 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - **Board** on Home: **List | Board** at the right of Home's tabs shows the profile's workspaces as five columns, **Needs you**, **Working**, **Idle**, **Ready to ship** and **Merged**, by the same rules as the List, remembered per profile. Cards move by themselves as Claude works and show their main action and **Delete** on hover and focus; **Delete n merged** sits at the top of Merged. Drag a card to **Drop to delete** at the bottom to open Delete workspace, where you confirm. Arrow keys move between cards and columns, <kbd>↵</kbd> opens, <kbd>Delete</kbd> or <kbd>⌫</kbd> deletes.
 - **Quick reply** on the Board's cards: type a message and press ↵ to send it to that workspace's Claude without opening it; a suspended Claude resumes first. It is never offered on a permission request (Open instead), over a prompt you typed and didn't send, or on Merged workspaces.
 
+### Changed
+
+- **Merged locally counts as merged:** a workspace whose branch is already in its base branch, on your machine or on the remote (merged, fast-forwarded or rebased onto it), counts as merged, also without a pull request. Delete workspace no longer warns that its commits aren't pushed and says **Merged into main**, or **Merged into your local main (not pushed yet)**; Home shows it under Clean up and in the Board's Merged column, and **Delete n merged** includes it.
+
 ## [0.4.3] - 2026-11-06
 
 ### Added

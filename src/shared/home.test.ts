@@ -6,6 +6,7 @@ import {
   type HomeSection,
   homeSection,
   homeSections,
+  mergedLabel,
   permissionTool,
   prNumber,
   projectCounts,
@@ -32,6 +33,7 @@ const repo = (projectId: string, primary: boolean, more: Partial<WorkspaceRepo> 
   baseBranch: 'main',
   pr: null,
   hasCommits: false,
+  merged: null,
   setupError: null,
   ...more,
 });
@@ -95,6 +97,23 @@ describe('homeSection', () => {
     // Working or needing you comes first.
     expect(homeSection(ws('working', merged), null)).toBe('working');
     expect(homeSection(ws('needs-permission', merged), null)).toBe('needs');
+  });
+
+  it('counts a branch merged into its base without a PR, also only locally (§14.2)', () => {
+    const local = { repos: [repo('web', true, { hasCommits: true, merged: 'local' })] };
+    expect(homeSection(ws('done', local), ahead)).toBe('clean');
+    expect(boardColumn(ws('done', local), ahead)).toBe('merged');
+    expect(shipCandidates([ws('done', local)])).toEqual([]);
+    const base = { repos: [repo('web', true, { hasCommits: true, merged: 'base' })] };
+    expect(homeSection(ws('exited', base), null)).toBe('clean');
+    // The PR's text wins over the base's.
+    expect(mergedLabel(repo('web', true, { merged: 'local' }))).toBe(
+      'Merged into your local main (not pushed yet)',
+    );
+    expect(mergedLabel(repo('web', true, { merged: 'base' }))).toBe('Merged into main');
+    expect(mergedLabel(repo('web', true, { merged: 'base', pr: pr('merged') }))).toBe(
+      'PR #212 merged',
+    );
   });
 
   it('puts Done workspaces with something to ship under Ready to ship', () => {

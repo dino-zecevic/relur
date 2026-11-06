@@ -9,13 +9,17 @@ The trash icon after the workspace's title, **Delete workspace…** in its **⋯
 
 With warnings the button reads **Delete anyway**, otherwise **Delete**. While there are uncommitted changes or unpushed commits, **Commit and push first** (**Commit first** without a remote) closes the dialog and opens the [Changes panel](finishing-work).
 
+## Merged branches
+
+If you merge the branch yourself, for example with `git merge --ff-only` in your main checkout, its commits are safe in the base branch, so the dialog doesn't warn that they aren't pushed. It says **✓ Merged into main** instead, or **✓ Merged into your local main (not pushed yet)** when only your local main has them. A branch counts as merged when it has commits of its own and they're all in the base branch, on your machine or on the remote: merged, fast-forwarded, or rebased onto it. Squash merges aren't recognised this way; a merged pull request covers them. A new workspace without commits is never merged. The other warnings, such as uncommitted changes, still show.
+
 ## The branch
 
-The local branch is deleted with the workspace, unless it has unpushed commits: then it's kept unless you tick **Also delete the local branch**. The branch on the remote is never touched.
+The local branch is deleted with the workspace, unless it has unpushed commits (commits in a merged branch don't count): then it's kept unless you tick **Also delete the local branch**. The branch on the remote is never touched.
 
 ## Several repositories
 
-A workspace across several repositories shows one card per repository, each with its warnings, or a ✓ when it's clean, and its own **Also delete the local branch**. Every worktree goes. To remove just one repository, use **Unlink <repo>…** in the **⋯** menu instead; see [Tasks across repositories](tasks-across-repositories#linking-and-unlinking).
+A workspace across several repositories shows one card per repository, each with its warnings, or a ✓ when it's clean or merged, and its own **Also delete the local branch**. Every worktree goes. To remove just one repository, use **Unlink <repo>…** in the **⋯** menu instead; see [Tasks across repositories](tasks-across-repositories#linking-and-unlinking).
 
 ## Teardown
 

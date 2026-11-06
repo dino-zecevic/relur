@@ -25,6 +25,7 @@ const repo = (projectId: string, primary: boolean, extra: Partial<WorkspaceRepo>
   baseBranch: 'main',
   pr: null,
   hasCommits: false,
+  merged: null,
   setupError: null,
   ...extra,
 });
@@ -33,7 +34,7 @@ describe('workspaceMerged (spec §21.5)', () => {
   const merged = { state: 'merged' as const, url: null, source: 'git' as const };
   it('needs every repository with commits or a PR to be merged', () => {
     expect(workspaceMerged({ repos: [repo('api', true)] })).toBeNull();
-    expect(workspaceMerged({ repos: [repo('api', true, { pr: merged })] })).toEqual(merged);
+    expect(workspaceMerged({ repos: [repo('api', true, { pr: merged })] })?.pr).toEqual(merged);
     expect(
       workspaceMerged({
         repos: [repo('api', true, { pr: merged }), repo('web', false, { hasCommits: true })],
@@ -43,8 +44,24 @@ describe('workspaceMerged (spec §21.5)', () => {
     expect(
       workspaceMerged({
         repos: [repo('api', true, { pr: merged, hasCommits: true }), repo('web', false)],
-      }),
+      })?.pr,
     ).toEqual(merged);
+  });
+
+  it('counts a branch contained in its base, per repository (spec §14.2)', () => {
+    const local = { hasCommits: true, merged: 'local' as const };
+    expect(workspaceMerged({ repos: [repo('api', true, local)] })?.merged).toBe('local');
+    // The linked one is merged locally, the main one's PR isn't known: not merged.
+    expect(
+      workspaceMerged({
+        repos: [repo('api', true, { hasCommits: true }), repo('web', false, local)],
+      }),
+    ).toBeNull();
+    // One by its PR, the other by its base: merged, shown by the main one.
+    const both = workspaceMerged({
+      repos: [repo('api', true, { pr: merged }), repo('web', false, local)],
+    });
+    expect(both?.projectId).toBe('api');
   });
 });
 
@@ -429,6 +446,24 @@ exec sleep 30
     expect(fx.git(repoPath('api'), 'branch', '--list', 'delete-me')).toBe('');
     expect(fx.git(repoPath('web'), 'branch', '--list', 'delete-me').trim()).toBe('delete-me');
     expect(records.get(workspace.id)).toBeNull();
+  });
+
+  it('a branch merged into its local base has nothing unpushed, per repository (§14.2)', async () => {
+    const { workspace } = await create('merged-here', ['web']);
+    const [, web] = workspace.repos as [WorkspaceRepo, WorkspaceRepo];
+    fx.git(web.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'local work');
+    const webPath = projects.find((p) => p.id === 'web')?.repoPath as string;
+    fx.git(webPath, 'merge', '-q', '--ff-only', 'merged-here');
+    const check = await workspaces.deleteCheck(workspace.id);
+    expect(check.repos.map((r) => [r.projectId, r.unpushed, r.merged])).toEqual([
+      ['api', 0, null],
+      ['web', 0, 'local'],
+    ]);
+    // Stored for Home: web counts, api has no work of its own.
+    expect(workspaceMerged(records.get(workspace.id) as Workspace)?.projectId).toBe('web');
+    // Pushed: merged into the base itself.
+    fx.git(webPath, 'push', '-q', 'origin', 'main');
+    expect((await workspaces.deleteCheck(workspace.id)).repos[1]?.merged).toBe('base');
   });
 
   it('removing a linked project deletes only its worktree; the workspace stays', async () => {

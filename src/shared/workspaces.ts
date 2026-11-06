@@ -72,6 +72,8 @@ export interface WorkspaceRepo {
   pr: PrStatus | null;
   /** Its branch has commits of its own (as of the last PR check). */
   hasCommits: boolean;
+  /** Its branch is contained in its base, as of the last check (spec §14.2); null when not. */
+  merged: MergedInto | null;
   /** Why its setup failed; null when it passed or hasn't run. */
   setupError: string | null;
 }
@@ -88,17 +90,32 @@ export function workspaceRepo(
 }
 
 /**
- * Whether the workspace's work is merged (spec §21.5): every repository with
- * commits of its own, or a known PR, is merged or likely merged. Null when
- * none has either; otherwise the main repository's state when it counts, else
- * the first that does.
+ * Where a branch with commits of its own is merged (spec §14.2): `base` when
+ * its tip, or every commit's change (`git cherry`), is in `<remote>/<base>`
+ * (in the local base for a project without a remote); `local` when only the
+ * local base has it, not pushed yet.
  */
-export function workspaceMerged(w: Pick<Workspace, 'repos'>): PrStatus | null {
+export type MergedInto = 'base' | 'local';
+
+/** "Merged into main", "Merged into your local main (not pushed yet)". */
+export const mergedText = (into: MergedInto, base: string) =>
+  into === 'base' ? `Merged into ${base}` : `Merged into your local ${base} (not pushed yet)`;
+
+export const prMerged = (pr: PrStatus | null) =>
+  pr?.state === 'merged' || pr?.state === 'likely-merged';
+
+/**
+ * Whether the workspace's work is merged (spec §21.5, §14.2): every
+ * repository with commits of its own, or a known PR, has its PR merged or
+ * likely merged, or its branch contained in its base. Null when none has
+ * either; otherwise the main repository when it counts, else the first that
+ * does.
+ */
+export function workspaceMerged(w: Pick<Workspace, 'repos'>): WorkspaceRepo | null {
   const counted = w.repos.filter((r) => r.hasCommits || r.pr);
   if (counted.length === 0) return null;
-  const merged = (r: WorkspaceRepo) => r.pr?.state === 'merged' || r.pr?.state === 'likely-merged';
-  if (!counted.every(merged)) return null;
-  return (counted.find((r) => r.primary) ?? counted[0])?.pr ?? null;
+  if (!counted.every((r) => prMerged(r.pr) || r.merged)) return null;
+  return counted.find((r) => r.primary) ?? counted[0] ?? null;
 }
 
 /**
@@ -133,6 +150,11 @@ export interface RepoDeleteCheck {
   worktreeMissing: boolean;
   /** Its pull request is known to be open or a draft. */
   prOpen: boolean;
+  /**
+   * Its branch is merged (spec §14.2); `unpushed` is then 0, since its
+   * commits are safe in the base.
+   */
+  merged: MergedInto | null;
 }
 
 /**
@@ -151,6 +173,8 @@ export interface WorkspaceDeleteCheck {
   worktreeMissing: boolean;
   /** Its pull request is known to be open or a draft. */
   prOpen: boolean;
+  /** The main repository's branch is merged (spec §14.2). */
+  merged: MergedInto | null;
 }
 
 /** What removing a project would delete or stop (spec §14.3). */

@@ -31,6 +31,7 @@ const workspace = (id: string, projectId = 'api'): Workspace => ({
       baseBranch: 'main',
       pr: null,
       hasCommits: false,
+      merged: null,
       setupError: null,
     },
   ],
