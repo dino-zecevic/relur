@@ -27,7 +27,7 @@ Opening a suspended workspace, from the sidebar, Home or a notification, resumes
 
 Keys you type while it resumes aren't sent: the terminal says **Keys you type now aren't sent**. Type again once Claude is ready. Holding them back would be riskier: a starting Claude can ask its own questions, where a held <kbd>↵</kbd> would answer without you seeing them.
 
-Buttons that type into Claude, such as **Continue** or a gate's answer, resume it first and type once it's ready.
+Buttons that type into Claude, such as **Continue**, a gate's answer or a [quick reply](home#board) on Home's Board, resume it first and type once it's ready.
 
 ## What a resume keeps and what it doesn't
 
@@ -53,7 +53,7 @@ For Claude started with **Start Claude here**, right-click its tab in the projec
 ## Where it shows
 
 - **Sidebar:** the workspace keeps its status glyph and shows **Suspended**. Hover it: "Suspended to save memory; resumes when you open it".
-- **Home:** **Suspended** on the workspace's row.
+- **Home:** **Suspended** on the workspace's row in the List and on its card in the Board.
 - **Workspaces table** in the project view: **· Suspended** after the state.
 - **Start Claude here** tabs: **Suspended** after the name.
 - **Memory:** a suspended session uses none and isn't counted. The panel that opens from the status bar's **Memory** lists the suspended sessions by name, in every profile (with the profile's name when it isn't the one shown), and the project view says how many. See [Memory](memory).

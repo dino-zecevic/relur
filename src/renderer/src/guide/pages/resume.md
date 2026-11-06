@@ -28,7 +28,7 @@ Claude saves a conversation only once you send its first prompt. If Claude stopp
 
 ## Work that was cut off
 
-Quitting, logging out, an update with `install.sh` or a crash stops Claude in the middle of its turn, together with any commands or background agents it had running. {{app}} remembers where that happened. A workspace counts as **unfinished** when Claude was:
+Quitting, logging out, an update (**Restart now**, or `install.sh`) or a crash stops Claude in the middle of its turn, together with any commands or background agents it had running. {{app}} remembers where that happened. A workspace counts as **unfinished** when Claude was:
 
 - **Working**, including while it waited for its own background agents or commands;
 - **interrupted with <kbd>Esc</kbd>** by you, just before the stop: it's never continued unless you choose so;

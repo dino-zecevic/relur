@@ -6,7 +6,7 @@ Every Claude tab has a **Responses** button at the right of its bar <kbd>{{key:r
 
 ## Parts of an answer
 
-While it works, Claude often writes a few lines, runs tools, then writes more. Those messages are the **parts** of one entry, in order, with a thin line between them where Claude worked. Prompts you didn't type yourself count too: a workflow's answer button and **Continue** send a prompt for you, and it gets its own entry.
+While it works, Claude often writes a few lines, runs tools, then writes more. Those messages are the **parts** of one entry, in order, with a thin line between them where Claude worked. Prompts you didn't type yourself count too: a workflow's answer button, **Continue** and a [quick reply](home#board) from Home send a prompt for you, and it gets its own entry.
 
 - **Copy** copies the whole entry, the parts separated by blank lines.
 - **Copy last part**, under an expanded entry with more than one part, copies only Claude's last message: usually its summary at the end.

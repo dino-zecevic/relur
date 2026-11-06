@@ -44,7 +44,7 @@ Usage comes from Claude's status line, so it updates while Claude runs and answe
 
 ## Couldn't check for updates
 
-**Check for Updates…** says why, for example when GitHub can't be reached. The daily check stays quiet when it fails and tries again later. See [Updates and privacy](updates).
+**Check for Updates…** says why, for example when GitHub can't be reached. The daily check stays quiet when it fails and tries again later. If an update can't replace {{app}}, the old version stays and the bar says why, with **Update in terminal**. See [Updates and privacy](updates#updating).
 
 ## Setup can't find a folder
 

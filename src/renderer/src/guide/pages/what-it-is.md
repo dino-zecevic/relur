@@ -4,9 +4,9 @@
 
 ## How it works
 
-- You add a git repository as a project.
+- You add a git repository as a project, or have {{app}} create or clone one.
 - For each task you create a workspace. {{app}} makes a worktree and a branch for it, prepares it, and starts Claude Code there.
-- While Claude works, you start the next task, or answer the one that needs you. The sidebar shows which.
+- While Claude works, you start the next task, or answer the one that needs you. The sidebar and [Home](home) show which.
 
 Every session is the regular `claude` command, running in a terminal you can see. {{app}} adds nothing to Claude Code's own settings, and nothing to your repository that git tracks. It has no telemetry or accounts; see [Updates and privacy](updates).
 

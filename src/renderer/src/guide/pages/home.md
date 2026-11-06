@@ -47,7 +47,7 @@ There is no field where a message could answer something by accident:
 
 ### Keyboard on the Board
 
-<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's field and buttons, and <kbd>Delete</kbd> or <kbd>⌫</kbd> opens Delete workspace.
+<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's field and buttons, and <kbd>Delete</kbd> or <kbd>{{mac}}⌫{{/mac}}{{other}}Backspace{{/other}}</kbd> opens Delete workspace.
 
 ## Terminal
 

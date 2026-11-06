@@ -10,9 +10,9 @@ The install script puts the AppImage in `~/Applications`, adds {{app}} to your d
 curl -fsSL https://raw.githubusercontent.com/{{repo}}/main/install.sh | sh
 ```
 
-Running it again updates {{app}}; `sh install.sh --uninstall` removes it and keeps your settings in `{{configDir}}`. {{app}} never updates itself, but it can tell you when a new version is out, and **Update** runs this command for you; see [Updates and privacy](updates).
+Running it again updates {{app}}; `sh install.sh --uninstall` removes it and keeps your settings in `{{configDir}}`. {{app}} can also tell you when a new version is out, and **Update** then replaces the AppImage where it is; see [Updates and privacy](updates).
 
-On Debian and Ubuntu you can install the `.deb` from the release instead (`sudo apt install ./{{app}}-linux-x64.deb`). It installs to `/opt/{{app}}`, needs no FUSE, and sets up the sandbox by itself. **On Ubuntu 23.10 and later, use the `.deb`:** the AppImage works there too, but only after you list it for the sandbox once (see [The sandbox](linux#the-sandbox)). Updates are the same: install the newer `.deb`; the update notice shows the command. **Install Command Line Tool…** in the **File** menu adds the `{{cli}}` command. Use one of the two, not both.
+On Debian and Ubuntu you can install the `.deb` from the release instead (`sudo apt install ./{{app}}-linux-x64.deb`). It installs to `/opt/{{app}}`, needs no FUSE, and sets up the sandbox by itself. **On Ubuntu 23.10 and later, use the `.deb`:** the AppImage works there too, but only after you list it for the sandbox once (see [The sandbox](linux#the-sandbox)). To update, install the newer `.deb`: the update bar shows the command. **Install Command Line Tool…** in the **File** menu adds the `{{cli}}` command. Use one of the two, not both.
 
 ## What's different from macOS
 
