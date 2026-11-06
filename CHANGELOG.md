@@ -4,6 +4,8 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-06
+
 ### Added
 
 - **Update** in the update notice now updates Relur inside the app, without a terminal: it downloads the new version for your Mac or your AppImage from the release, with a progress bar and **Cancel**, checks it against the release's `SHA256SUMS` and that it is Relur at that version, and then offers **Restart now** or **Later** (installed when you next quit). Relur is replaced where it is installed, in `/Applications`, `~/Applications` or your AppImage's folder, never with `sudo`; if that fails, the old version stays, opens again and says why. Nothing is downloaded before you click Update.
@@ -134,7 +136,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/relur-dev/relur/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/relur-dev/relur/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/relur-dev/relur/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/relur-dev/relur/compare/v0.3.2...v0.4.0
