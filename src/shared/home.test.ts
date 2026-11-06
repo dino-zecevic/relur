@@ -262,6 +262,10 @@ describe('boardColumns', () => {
     }
   });
 
+  it('orders the columns Working, Idle, Needs you, Ready to ship, Merged', () => {
+    expect(BOARD_COLUMNS).toEqual(['working', 'idle', 'needs', 'ship', 'merged']);
+  });
+
   it('puts every workspace in exactly one column, the rest under Idle by last activity', () => {
     const list = all();
     const columns = boardColumns(list, () => clean);

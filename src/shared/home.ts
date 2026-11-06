@@ -152,7 +152,7 @@ export function projectCounts(
  */
 export type BoardColumn = 'needs' | 'working' | 'idle' | 'ship' | 'merged';
 
-export const BOARD_COLUMNS: readonly BoardColumn[] = ['needs', 'working', 'idle', 'ship', 'merged'];
+export const BOARD_COLUMNS: readonly BoardColumn[] = ['working', 'idle', 'needs', 'ship', 'merged'];
 
 export const BOARD_COLUMN_TITLE: Record<BoardColumn, string> = {
   needs: 'Needs you',

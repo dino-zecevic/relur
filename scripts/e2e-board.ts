@@ -279,30 +279,44 @@ exec sleep 600
     await waitState('draft', 'Done');
     await typeInTerminal(page, 'half a thought', false);
 
-    // 3. ⌘0: the List, then the Board.
+    // 3. ⌘0: the Board, the default of a profile that never chose; the List and back.
     await pressKey(page, 'Digit0', CMD);
-    await page.waitFor(`${layout} === 'list'`, 'the switch on List');
+    await page.waitFor(`${layout} === 'board'`, 'the switch on Board');
     assert.equal(
       await page.eval(
-        `document.querySelector('[data-home-layout-option=list]').getAttribute('aria-pressed')`,
+        `document.querySelector('[data-home-layout-option=board]').getAttribute('aria-pressed')`,
       ),
       'true',
     );
-    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
     await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board');
+    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-home-overview]')`, 'the List');
+    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
     await page.waitFor(`${columnIds('ship')}.length === 2`, 'the cards to ship', 30_000);
     assert.deepEqual(
       await page.eval(
         `[...document.querySelectorAll('[data-board-column]')].map((c) => c.dataset.boardColumn + ':' + c.querySelector('h2').textContent + ':' + c.querySelector('[data-board-count]').textContent)`,
       ),
       [
-        'needs:Needs you:2',
         'working:Working:1',
         'idle:Idle:1',
+        'needs:Needs you:2',
         'ship:Ready to ship:2',
         'merged:Merged:0',
       ],
     );
+    // Needs you stands out while it has cards: its count in the most urgent card's color.
+    const tone = (column: string) =>
+      `(document.querySelector('[data-board-column=${column}]').dataset.boardTone ?? null)`;
+    assert.equal(await page.eval(tone('needs')), 'permission');
+    assert.ok(
+      await page.eval(
+        `document.querySelector('[data-board-column=needs] [data-board-count]').classList.contains('text-st-permission')`,
+      ),
+      'the count in the permission color',
+    );
+    assert.equal(await page.eval(tone('idle')), null);
     assert.match(
       await page.eval<string>(`document.querySelector('[data-board-column=merged]').innerText`),
       /Nothing here/,
@@ -417,12 +431,11 @@ exec sleep 600
       `${columnOf(id('perm'))} === 'needs' && !!${card(id('perm'))}.querySelector('[data-quick-reply]')`,
       'its field now',
     );
+    assert.equal(await page.eval(tone('needs')), 'input', 'waiting for input: the input color');
 
     // 6. The keyboard: ↓ from the Board to the first card, ← → across columns, ↑ ↓ within.
     await page.eval(`document.querySelector('[data-home-board]').focus()`);
     await pressKey(page, 'ArrowDown');
-    assert.equal(await page.eval(activeCard), id('perm'));
-    await pressKey(page, 'ArrowRight');
     assert.equal(await page.eval(activeCard), id('working'));
     await pressKey(page, 'ArrowRight');
     const idleFirst = await page.eval<string>(`${columnIds('idle')}[0]`);
@@ -431,9 +444,13 @@ exec sleep 600
     assert.equal(await page.eval(activeCard), await page.eval<string>(`${columnIds('idle')}[1]`));
     await pressKey(page, 'ArrowUp');
     assert.equal(await page.eval(activeCard), idleFirst);
+    await pressKey(page, 'ArrowRight');
+    assert.equal(await page.eval(activeCard), id('perm'));
     // → skips the empty Ready to ship.
     await pressKey(page, 'ArrowRight');
     assert.equal(await page.eval(columnOf(await page.eval<string>(activeCard))), 'merged');
+    await pressKey(page, 'ArrowLeft');
+    assert.equal(await page.eval(activeCard), id('perm'));
     await pressKey(page, 'ArrowLeft');
     await pressKey(page, 'ArrowLeft');
     assert.equal(await page.eval(activeCard), id('working'));
@@ -618,15 +635,14 @@ exec sleep 600
     await page.waitFor(`!${card(draft)}`, 'the card gone', 30_000);
     assert.equal(fs.existsSync(ws.draft?.tree as string), false, 'its worktree deleted');
 
-    // 9. Personal: its own layout (List), and a suspended Claude resumed for a reply.
+    // 9. Personal: the Board too (it never chose), and a suspended Claude resumed for a reply.
     await clickLabel(page, 'Select Personal');
     await create('sleepy', 'api', 'ABC-7 Pagination');
     await typeInTerminal(page, 'prompt');
     await typeInTerminal(page, 'stop');
     await waitState('sleepy', 'Done');
     await pressKey(page, 'Digit0', CMD);
-    await page.waitFor(`${layout} === 'list'`, "Personal's own layout");
-    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
+    await page.waitFor(`${layout} === 'board'`, "Personal's Board by default");
     await page.waitFor(
       `!!${card(id('sleepy'))}?.querySelector('[data-suspended]')`,
       'suspended',
@@ -647,6 +663,11 @@ exec sleep 600
       .split('\n');
     assert.equal(starts.length, startsBefore + 1, 'Claude started again');
     assert.match(starts.at(-1) ?? '', /--resume/);
+    // Needs you, empty, looks like the others.
+    assert.equal(await page.eval(tone('needs')), null);
+    // Personal chooses the List.
+    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
+    await page.waitFor(`${layout} === 'list'`, 'Personal on the List');
 
     // 10. Both layouts are remembered per profile across a restart.
     await app.stop();
@@ -658,15 +679,19 @@ exec sleep 600
       `${layout} === 'board' && !!document.querySelector('[data-home-board]')`,
       "Work's Board",
     );
+    // A stored List stays, though the Board is the default.
     await clickLabel(page, 'Select Personal');
-    await page.waitFor(`${layout} === 'board'`, "Personal's Board");
-    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
+    await page.waitFor(
+      `${layout} === 'list' && !!document.querySelector('[data-home-overview]')`,
+      "Personal's List",
+    );
+    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
     await clickLabel(page, 'Select Work');
     await page.waitFor(`${layout} === 'board'`, 'Work still on the Board');
     await clickLabel(page, 'Select Personal');
     await page.waitFor(
-      `${layout} === 'list' && !!document.querySelector('[data-home-overview]')`,
-      'Personal on the List',
+      `${layout} === 'board' && !!document.querySelector('[data-home-board]')`,
+      'Personal on the Board',
     );
 
     console.log('e2e-board: ok');

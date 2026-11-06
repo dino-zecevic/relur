@@ -28,6 +28,7 @@ import {
   pressShortcut,
   type RunningApp,
   screenshot,
+  showHomeList,
   sleep,
   submitDialog,
   typeInField,
@@ -321,8 +322,9 @@ exec sleep 600
       await waitState(key, 'Done');
     }
 
-    // 4. ⌘0: the Overview with every section.
+    // 4. ⌘0: the Overview with every section, on the List (the Board is the default).
     await pressKey(page, 'Digit0', CMD);
+    await showHomeList(page);
     await page.waitFor(
       `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'sections'`,
       'the sections',

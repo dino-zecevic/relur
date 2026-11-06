@@ -4,7 +4,7 @@ Each profile has a Home <kbd>{{key:home}}</kbd>: the first thing you see, and wh
 
 ## Overview
 
-The Overview shows the profile's workspaces as a List or a [Board](#board). The List has four sections, and only those that need something from you. It changes as Claude works.
+The Overview shows the profile's workspaces as a [Board](#board), the default, or a List. The List has four sections, and only those that need something from you. It changes as Claude works.
 
 ![Home's Overview: two workspaces need you (a Spec review gate with Review and Approve spec, and a permission request), one is working with 1.5 GB of memory, and two are ready to ship with Commit… and Push. At a glance and Quick actions are on the right.](images/home-overview.webp)
 
@@ -25,9 +25,9 @@ Click a row, or press <kbd>↵</kbd> on it, to open its workspace. <kbd>↑</kbd
 
 ## Board
 
-**List | Board** at the right of Home's tabs shows the same workspaces as five columns: **Needs you**, **Working**, **Idle**, **Ready to ship** and **Merged**. The choice is remembered for each profile. A workspace is in the same place as in the List; **Idle** holds the rest: interrupted, suspended or exited, or done with nothing to ship.
+The Board shows the profile's workspaces as five columns: **Working**, **Idle**, **Needs you**, **Ready to ship** and **Merged**. While something needs you, the Needs you column is tinted and its count takes the color of its most urgent card, as in the sidebar. **List | Board** at the right of Home's tabs switches between the Board and the List, and the choice is remembered for each profile. A workspace is in the same place as in the List; **Idle** holds the rest: interrupted, suspended or exited, or done with nothing to ship.
 
-![Home's Board: Needs you holds a Spec review gate with a quick reply field and a permission request with Open, Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged.](images/home-board.webp)
+![Home's Board: Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with a quick reply field and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged.](images/home-board.webp)
 
 Cards move between the columns by themselves as Claude works; you can't drag them from one column to another. Click a card to open its workspace. Hover over it, or give it the focus, for its main action (such as **Open**, **Approve spec** or **Push**) and **Delete**. **Delete n merged** at the top of Merged deletes all of them in one dialog. In a narrow window the Board scrolls sideways, and each column scrolls on its own.
 

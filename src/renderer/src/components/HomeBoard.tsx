@@ -56,6 +56,24 @@ interface Drag {
   reduced: boolean;
 }
 
+/**
+ * Needs you stands out while it has cards (spec §6.7): its count in the most
+ * urgent card's color, as the sidebar's (permission, then input), on a tint.
+ */
+type NeedsTone = 'permission' | 'input';
+const needsTone = (list: Workspace[]): NeedsTone =>
+  list.some((w) => w.state === 'needs-permission') ? 'permission' : 'input';
+const NEEDS_TONE: Record<NeedsTone, string> = {
+  permission:
+    'border-[color-mix(in_oklab,var(--color-st-permission)_35%,var(--color-line))] bg-[color-mix(in_oklab,var(--color-st-permission)_6%,var(--color-canvas))]',
+  input:
+    'border-[color-mix(in_oklab,var(--color-st-input)_35%,var(--color-line))] bg-[color-mix(in_oklab,var(--color-st-input)_6%,var(--color-canvas))]',
+};
+const TONE_TEXT: Record<NeedsTone, string> = {
+  permission: 'text-st-permission',
+  input: 'text-st-input',
+};
+
 const cardLabel = (w: Workspace) => w.task.id ?? (w.task.title || w.name);
 
 /**
@@ -526,18 +544,25 @@ export function HomeBoard({
       >
         {BOARD_COLUMNS.map((column) => {
           const list = columns[column];
+          const tone = column === 'needs' && list.length > 0 ? needsTone(list) : null;
           return (
             <section
               key={column}
               data-board-column={column}
+              data-board-tone={tone ?? undefined}
               aria-label={BOARD_COLUMN_TITLE[column]}
-              className="flex min-h-0 min-w-[220px] flex-[1_0_220px] flex-col rounded-lg border border-line bg-canvas"
+              className={`flex min-h-0 min-w-[220px] flex-[1_0_220px] flex-col rounded-lg border ${
+                tone ? NEEDS_TONE[tone] : 'border-line bg-canvas'
+              }`}
             >
               <div className="flex h-10 flex-none items-center gap-2 pr-2 pl-3">
                 <h2 className="text-base font-semibold whitespace-nowrap">
                   {BOARD_COLUMN_TITLE[column]}
                 </h2>
-                <span data-board-count className="font-mono text-sm text-fg-subtle">
+                <span
+                  data-board-count
+                  className={`font-mono text-sm ${tone ? `font-semibold ${TONE_TEXT[tone]}` : 'text-fg-subtle'}`}
+                >
                   {list.length}
                 </span>
                 <span className="flex-1" />

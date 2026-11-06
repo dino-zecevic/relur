@@ -33,9 +33,10 @@ const layoutKey = (profileId: string) => `home-layout:${profileId}`;
 
 function loadLayout(profileId: string): HomeLayout {
   try {
-    return localStorage.getItem(layoutKey(profileId)) === 'board' ? 'board' : 'list';
+    // The Board unless the profile chose the List (spec §6.7).
+    return localStorage.getItem(layoutKey(profileId)) === 'list' ? 'list' : 'board';
   } catch {
-    return 'list';
+    return 'board';
   }
 }
 

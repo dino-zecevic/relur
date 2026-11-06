@@ -30,6 +30,7 @@ import {
   openContextMenu,
   pressKey,
   type RunningApp,
+  showHomeList,
   sleep,
   submitDialog,
   typeInField,
@@ -663,8 +664,9 @@ async function main() {
     await sleep(800);
     await shoot('suspended-workspace', { selectors: ['main table'], pad: 4 });
 
-    // 7. Home's Overview.
+    // 7. Home's Overview, on the List (the Board is the default).
     await pressKey(page, 'Digit0', CMD);
+    await showHomeList(page);
     await page.waitFor(
       `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'sections'`,
       'the Overview',

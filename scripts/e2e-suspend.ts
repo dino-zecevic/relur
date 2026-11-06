@@ -33,6 +33,7 @@ import {
   ptyRecords,
   type RunningApp,
   recordPtys,
+  showHomeList,
   sleep,
   submitDialog,
   typeInField,
@@ -580,6 +581,7 @@ done
       assert.equal(starts(branch).length, before[branch], `${branch} starts suspended`);
     }
     // Home's rows show the mark too: Alpha is Ready to ship, suspended.
+    await showHomeList(page);
     await page.waitFor(
       `!!document.querySelector('[data-home-row="${ids.Alpha}"] [data-suspended]')`,
       'Suspended on Home',

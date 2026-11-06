@@ -29,6 +29,7 @@ import {
   openContextMenu,
   pressKey,
   type RunningApp,
+  showHomeList,
   sleep,
   submitDialog,
   typeInField,
@@ -307,6 +308,7 @@ exec sleep 600
     // Delta in Personal: under Home's Needs you (spec §6.7), with Continue and
     // Dismiss; Dismiss drops the marker and sends nothing.
     await pressKey(page, 'Digit2', CMD);
+    await showHomeList(page);
     const homeDelta = `document.querySelector('[data-home-row="${ids.Delta}"]')`;
     await page.waitFor(
       `${homeDelta}?.dataset.homeSection === 'needs' && ${homeDelta}.innerText.includes('Unfinished')`,
