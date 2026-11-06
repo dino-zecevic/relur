@@ -4,14 +4,16 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-06
+
 ### Added
 
-- Screenshots in the Guide: the sidebar, Home, New workspace with a task lookup, the Changes and Responses panels, the memory panel, a suspended workspace, a workflow gate, Edit profile and a workspace across repositories, each in the app's dark or light theme.
+- Screenshots in the Guide: the sidebar, Home, New workspace with a task lookup, the Changes and Responses panels, the memory panel, a suspended workspace, a workflow gate, Edit profile and a workspace across repositories, in dark and light, following the app's theme.
 - The Guide for the web: every release has `Relur-guide.tar.gz`, the Guide as plain Markdown for a reader on any platform, with its screenshots and an `index.json` of its sections and pages.
 
 ### Changed
 
-- Idle Claude sessions are now suspended after 10 minutes by default, to save memory; they resume in the same conversation when you open them. Profiles that never changed **Suspend idle sessions** get 10 minutes after the update, and Relur says so once, with **Settings** to change it in **Edit profile › General**. A profile where you chose a time keeps it, and choosing **Off** now stays Off.
+- Idle Claude sessions are now suspended after 10 minutes by default, to save memory, also in new profiles; they resume in the same conversation when you open them. Profiles that never changed **Suspend idle sessions** get 10 minutes after the update, and Relur says so once, with **Settings** to change it in **Edit profile › General**. A profile where you chose a time keeps it, and choosing **Off** now stays Off.
 
 ## [0.4.1] - 2026-11-05
 
@@ -123,7 +125,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/relur-dev/relur/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/relur-dev/relur/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/relur-dev/relur/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/relur-dev/relur/compare/v0.3.1...v0.3.2

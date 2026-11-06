@@ -6,7 +6,7 @@ Every Claude session holds memory: Claude Code itself, its MCP servers and the s
 
 It's on for every profile: Claude is suspended after **10 minutes**. In [Edit profile](edit-profile) › General, **Suspend idle sessions** changes that to **5** or **30 minutes**, or turns it **Off**. It applies to the profile's workspaces and to Claude started with [Start Claude here](start-claude-here).
 
-In earlier versions it was off unless you turned it on. Profiles that never changed the setting get 10 minutes after the update, and {{app}} says so once, in a bar at the top of the window: **Settings** opens Edit profile for the profile you're looking at, **OK** closes the bar. A profile where you chose a time, or Off, keeps it.
+Before version 0.4.2 it was off unless you turned it on. Profiles that never changed the setting get 10 minutes after the update, and {{app}} says so once, in a bar at the top of the window: **Settings** opens Edit profile for the profile you're looking at, **OK** closes the bar. A profile where you chose a time, or Off, keeps it.
 
 ## When Claude is suspended
 
