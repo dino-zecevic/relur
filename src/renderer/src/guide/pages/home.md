@@ -4,7 +4,7 @@ Each profile has a Home <kbd>{{key:home}}</kbd>: the first thing you see, and wh
 
 ## Overview
 
-The Overview shows the profile's workspaces in four sections, and only those that need something from you. It changes as Claude works.
+The Overview shows the profile's workspaces as a List or a [Board](#board). The List has four sections, and only those that need something from you. It changes as Claude works.
 
 ![Home's Overview: two workspaces need you (a Spec review gate with Review and Approve spec, and a permission request), one is working with 1.5 GB of memory, and two are ready to ship with Commit… and Push. At a glance and Quick actions are on the right.](images/home-overview.webp)
 
@@ -22,6 +22,32 @@ When nothing needs you, nothing runs and nothing is waiting to ship, the Overvie
 ### Keyboard
 
 Click a row, or press <kbd>↵</kbd> on it, to open its workspace. <kbd>↑</kbd> and <kbd>↓</kbd> move between the rows of all sections, and <kbd>Tab</kbd> reaches a row's buttons. Buttons that show only when the mouse is over a row, such as **Open** under Working now and **Delete** under Clean up, show while the row has the focus too.
+
+## Board
+
+**List | Board** at the right of Home's tabs shows the same workspaces as five columns: **Needs you**, **Working**, **Idle**, **Ready to ship** and **Merged**. The choice is remembered for each profile. A workspace is in the same place as in the List; **Idle** holds the rest: interrupted, suspended or exited, or done with nothing to ship.
+
+![Home's Board: Needs you holds a Spec review gate with a quick reply field and a permission request with Open, Working holds one workspace with its memory, Idle is empty, and Ready to ship holds two workspaces, one with a file not committed.](images/home-board.webp)
+
+Cards move between the columns by themselves as Claude works; you can't drag them from one column to another. Click a card to open its workspace. Hover over it, or give it the focus, for its main action (such as **Open**, **Approve spec** or **Push**) and **Delete**. **Delete n merged** at the top of Merged deletes all of them in one dialog. In a narrow window the Board scrolls sideways, and each column scrolls on its own.
+
+### Drag to delete
+
+Drag a card and **Drop to delete** appears along the bottom. Drop it there to open [Delete workspace](delete-workspace) with everything deleting it would lose; nothing is deleted until you confirm. <kbd>Esc</kbd>, or dropping it anywhere else, cancels.
+
+### Quick reply
+
+A card has a field to send Claude a message without opening the workspace: under Needs you it is always there, elsewhere it shows when you hover over the card or give it the focus. <kbd>↵</kbd> sends it, as if you had typed it in the Claude tab; a [suspended](suspend) Claude resumes first. While Claude works, it reads the message after its current step.
+
+There is no field where a message could answer something by accident:
+
+- **Needs permission:** Claude shows its permission menu, which typed text would answer. The card offers **Open** instead, so you answer it in the Claude tab.
+- **An unsent prompt:** if you typed into the Claude tab and didn't send it, the card says **Has an unsent prompt; open it**.
+- **Merged** workspaces, and workspaces whose Claude has exited.
+
+### Keyboard on the Board
+
+<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's field and buttons, and <kbd>Delete</kbd> or <kbd>⌫</kbd> opens Delete workspace.
 
 ## Terminal
 

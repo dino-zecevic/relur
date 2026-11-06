@@ -1,0 +1,620 @@
+/**
+ * End-to-end test of Home's Board (spec §6.7): the List | Board switch and
+ * its memory per profile (also across a restart), the five columns following
+ * the workspaces live, drag to delete (Esc, a drop elsewhere, the zone, the
+ * dialog's Cancel and Delete), the keyboard (↑↓←→, ↵, Tab, Delete), Delete n
+ * merged, and the quick reply: sent to a waiting workspace and to a working
+ * one, resumed first for a suspended one, refused on a permission request
+ * (Open instead) and over a draft. Runs with a throwaway HOME and a fake
+ * `claude`.
+ *
+ *   tsx scripts/e2e-board.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
+ */
+import './lib/clean-env';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { appConfigDir } from '../src/main/paths';
+import { createFixture } from '../src/main/test-support/git-fixtures';
+import { SEED_CONFIG } from '../src/main/test-support/seed-config';
+import { envVar } from '../src/shared/brand';
+import {
+  type Cdp,
+  CMD,
+  clickLabel,
+  dialogText,
+  launchApp,
+  pressKey,
+  type RunningApp,
+  screenshot,
+  sleep,
+  submitDialog,
+  typeInField,
+  typeInTerminal,
+  waitForFile,
+  withDisplayEnv,
+} from './lib/app-driver';
+
+const args = process.argv.slice(2);
+const screenshotDir = args.find((a) => a.startsWith('--screenshots='))?.split('=')[1];
+const devMode = args.includes('--dev');
+const electronArgs = args.filter((a) => !a.startsWith('--screenshots=') && a !== '--dev');
+
+/**
+ * A minute lasts this long here: Personal's "after 5 minutes" is 5 seconds,
+ * longer than a resumed Claude takes to be ready for the reply.
+ */
+const MINUTE_MS = 1000;
+
+/** A card by workspace id, as an expression. */
+const card = (id: string) => `document.querySelector('[data-board-card="${id}"]')`;
+/** The ids of a column's cards, in order, as an expression. */
+const columnIds = (column: string) =>
+  `[...document.querySelectorAll('[data-board-column=${column}] [data-board-card]')].map((c) => c.dataset.boardCard)`;
+const columnOf = (id: string) =>
+  `(${card(id)}?.closest('[data-board-column]')?.dataset.boardColumn ?? null)`;
+const activeCard = `(document.activeElement?.dataset?.boardCard ?? null)`;
+const layout = `(document.querySelector('[data-home-layout]')?.dataset.homeLayout ?? null)`;
+
+async function until(check: () => boolean, what: string, timeoutMs = 20_000) {
+  for (const end = Date.now() + timeoutMs; Date.now() < end; ) {
+    if (check()) return;
+    await sleep(100);
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
+/** The middle of an element, in the window's coordinates. */
+const centre = (page: Cdp, expression: string) =>
+  page.eval<{ x: number; y: number }>(`(() => {
+    const r = (${expression}).getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  })()`);
+
+async function mouse(
+  page: Cdp,
+  type: 'mouseMoved' | 'mousePressed' | 'mouseReleased',
+  x: number,
+  y: number,
+) {
+  await page.send('Input.dispatchMouseEvent', {
+    type,
+    x,
+    y,
+    button: type === 'mouseMoved' ? 'none' : 'left',
+    buttons: type === 'mouseReleased' ? 0 : type === 'mousePressed' ? 1 : 1,
+    clickCount: 1,
+  });
+}
+
+/** Presses on a card and moves the pointer far enough to lift it. */
+async function lift(page: Cdp, id: string) {
+  const from = await centre(page, card(id));
+  await mouse(page, 'mousePressed', from.x, from.y);
+  for (let i = 1; i <= 4; i++) await mouse(page, 'mouseMoved', from.x + i * 5, from.y + i * 5);
+  await page.waitFor(`!!document.querySelector('[data-board-float]')`, 'the lifted card');
+  return from;
+}
+
+async function main() {
+  const fx = createFixture();
+  let app: RunningApp | undefined;
+  try {
+    const { clone: web } = fx.cloneWithRemote('web', 'main');
+    const api = fx.localRepo('api');
+    fs.writeFileSync(path.join(fx.root, '.zshrc'), '');
+    // A stand-in for Claude: passes the setup check, runs SessionStart with
+    // its transcript's path, notes its workspace, worktree and starts, turns
+    // typed words into hooks (a pasted line arrives in bracketed-paste marks,
+    // which it drops) and records every other line typed into it. As Claude
+    // Code, it writes its transcript at the first prompt.
+    const fakeClaude = path.join(fx.root, 'bin', 'fake-claude');
+    fs.mkdirSync(path.dirname(fakeClaude));
+    fs.writeFileSync(
+      fakeClaude,
+      `#!/bin/sh
+case "$1" in
+  --version) echo '9.9.9 (Claude Code)'; exit 0 ;;
+  auth) printf '{"loggedIn":true,"email":"test@example.com","configDirectory":"%s"}\\n' "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; exit 0 ;;
+esac
+settings=""; sid="fake-$$"; prev=""
+for arg in "$@"; do
+  [ "$prev" = --settings ] && settings="$arg"
+  { [ "$prev" = --session-id ] || [ "$prev" = --resume ]; } && sid="$arg"
+  prev="$arg"
+done
+transcript="$HOME/transcripts/$sid.jsonl"
+helper=""
+[ -n "$settings" ] && helper=$(sed -n "s/.*\\"command\\": \\"'\\(.*\\)' hook SessionStart\\".*/\\1/p" "$settings")
+hook() { [ -n "$helper" ] && printf '%s' "$2" | "$helper" hook "$1" > /dev/null; }
+id="\${${envVar('WORKSPACE_ID')}:-home}"
+echo "$PWD" > "$HOME/tree-$id.txt"
+echo "$*" >> "$HOME/starts-$id.txt"
+hook SessionStart "{\\"session_id\\":\\"$sid\\",\\"transcript_path\\":\\"$transcript\\"}"
+echo "fake claude"
+esc=$(printf '\\033')
+while IFS= read -r line; do
+  line=$(printf '%s' "$line" | tr -d "$esc"); line=\${line#\\[200~}; line=\${line%\\[201~}
+  case "$line" in
+    prompt)
+      mkdir -p "$HOME/transcripts"
+      echo '{"type":"user","message":{"role":"user","content":"Fix it"}}' >> "$transcript"
+      hook UserPromptSubmit '{"prompt":"Fix it"}' ;;
+    permission) hook Notification '{"message":"Claude needs your permission to use Bash"}' ;;
+    input) hook Notification '{"notification_type":"idle_prompt","message":"Claude is waiting for your input"}' ;;
+    stop) hook Stop '{"last_assistant_message":"Done."}' ;;
+    *) printf '%s\\n' "$line" >> "$HOME/input-$id.txt" ;;
+  esac
+done
+exec sleep 600
+`,
+      { mode: 0o755 },
+    );
+    fs.writeFileSync(path.join(fx.root, '.claude.json'), '{}');
+    fs.mkdirSync(path.join(fx.root, '.claude-personal'));
+    fs.writeFileSync(path.join(fx.root, '.claude-personal', '.claude.json'), '{}');
+    const configFile = path.join(
+      appConfigDir({ platform: process.platform, env: {}, homeDir: fx.root }),
+      'config.json',
+    );
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify({
+        ...SEED_CONFIG,
+        profiles: SEED_CONFIG.profiles.map((p) => ({
+          ...p,
+          claude: { command: fakeClaude, args: [] },
+          // Personal suspends its idle Claude after "5 minutes" (spec §9.8).
+          ...(p.id === 'personal' ? { suspendIdleMin: 5 } : {}),
+          ...(p.id === 'work'
+            ? {
+                pr: {
+                  statusCommand: `cat "$HOME/pr-$${envVar('BRANCH')}" 2>/dev/null || true`,
+                },
+              }
+            : {}),
+        })),
+        projects: [
+          {
+            id: 'web',
+            profileId: 'work',
+            name: 'web',
+            repoPath: web,
+            remote: 'origin',
+            baseBranch: 'main',
+          },
+          { id: 'api', profileId: 'personal', name: 'api', repoPath: api, remote: null },
+        ],
+      }),
+    );
+    const file = (name: string) => path.join(fx.root, name);
+    const read = (name: string) =>
+      fs.existsSync(file(name)) ? fs.readFileSync(file(name), 'utf8') : '';
+    const launch = () =>
+      launchApp({
+        env: withDisplayEnv({ ...fx.env, [envVar('SUSPEND_MINUTE_MS')]: String(MINUTE_MS) }),
+        dev: devMode,
+        electronArgs,
+      });
+
+    app = await launch();
+    let page = app.page;
+
+    // 1. Without workspaces there is nothing to switch.
+    await page.waitFor(
+      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'empty'`,
+      'All clear',
+    );
+    assert.equal(await page.eval(layout), null, 'no switch without workspaces');
+
+    // 2. Workspaces in every column but Ready to ship.
+    const ws: Record<string, { id: string; tree: string; branch: string }> = {};
+    const create = async (key: string, project: string, task: string) => {
+      const before = new Set(fs.readdirSync(fx.root).filter((f) => f.startsWith('tree-')));
+      await clickLabel(page, `New workspace in ${project}`);
+      await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'New workspace');
+      await typeInField(page, '#ws-task', task, false);
+      await sleep(600);
+      await submitDialog(page);
+      await page.waitFor(
+        `!document.querySelector('dialog[open]')`,
+        `the workspace ${task}`,
+        30_000,
+      );
+      let found: string | undefined;
+      for (const end = Date.now() + 20_000; !found && Date.now() < end; await sleep(100)) {
+        found = fs
+          .readdirSync(fx.root)
+          .find((f) => f.startsWith('tree-') && f !== 'tree-home.txt' && !before.has(f));
+      }
+      if (!found) throw new Error(`Claude didn't start in ${task}`);
+      const id = found.slice('tree-'.length, -'.txt'.length);
+      const tree = (await waitForFile(file(found))).trim();
+      ws[key] = { id, tree, branch: fx.git(tree, 'branch', '--show-current').trim() };
+      await page.waitFor(
+        `[...document.querySelectorAll('[data-terminal][data-connected]')].some((t) => t.offsetParent)`,
+        `the terminal of ${task}`,
+      );
+    };
+    const id = (key: string) => ws[key]?.id as string;
+    const sidebarState = (key: string) =>
+      `(document.querySelector('nav [data-nav-key="w:${id(key)}"]')?.title.split('\\n')[1] ?? '')`;
+    const waitState = (key: string, state: string) =>
+      page.waitFor(`${sidebarState(key)}.startsWith(${JSON.stringify(state)})`, `${key}: ${state}`);
+
+    await create('waiting', 'web', 'ABC-1 Pick a color');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'input');
+    await waitState('waiting', 'Waiting for input');
+    await create('perm', 'web', 'ABC-2 Fix the flaky test');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'permission');
+    await waitState('perm', 'Needs permission');
+    await create('working', 'web', 'ABC-3 Rate limit the login');
+    await typeInTerminal(page, 'prompt');
+    await waitState('working', 'Working');
+    for (const [key, n] of [
+      ['merged1', 198],
+      ['merged2', 187],
+    ] as const) {
+      await create(key, 'web', `ABC-${n} Merged ${n}`);
+      const tree = ws[key]?.tree as string;
+      fs.writeFileSync(path.join(tree, `${key}.txt`), 'x\n');
+      fx.git(tree, 'add', '-A');
+      fx.git(tree, 'commit', '-q', '-m', `Add ${key}`);
+      fs.writeFileSync(
+        file(`pr-${ws[key]?.branch}`),
+        JSON.stringify({ state: 'merged', url: `https://git.example.com/acme/web/pull/${n}` }),
+      );
+      await typeInTerminal(page, 'stop');
+      await waitState(key, 'Done');
+    }
+    // Idle, with a draft: text typed into its Claude and not sent.
+    await create('draft', 'web', 'ABC-6 Search box focus');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'stop');
+    await waitState('draft', 'Done');
+    await typeInTerminal(page, 'half a thought', false);
+
+    // 3. ⌘0: the List, then the Board.
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`${layout} === 'list'`, 'the switch on List');
+    assert.equal(
+      await page.eval(
+        `document.querySelector('[data-home-layout-option=list]').getAttribute('aria-pressed')`,
+      ),
+      'true',
+    );
+    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board');
+    await page.waitFor(`${columnIds('ship')}.length === 2`, 'the cards to ship', 30_000);
+    assert.deepEqual(
+      await page.eval(
+        `[...document.querySelectorAll('[data-board-column]')].map((c) => c.dataset.boardColumn + ':' + c.querySelector('h2').textContent + ':' + c.querySelector('[data-board-count]').textContent)`,
+      ),
+      [
+        'needs:Needs you:2',
+        'working:Working:1',
+        'idle:Idle:1',
+        'ship:Ready to ship:2',
+        'merged:Merged:0',
+      ],
+    );
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-board-column=merged]').innerText`),
+      /Nothing here/,
+    );
+    assert.match(
+      await page.eval<string>(`${card(id('merged1'))}.innerText`),
+      /1 commit not pushed/,
+    );
+    // Pushed from their cards, their PRs are known merged: they move to Merged by themselves.
+    for (const key of ['merged1', 'merged2']) {
+      await page.eval(`${card(id(key))}.focus()`);
+      await page.eval(`${card(id(key))}.querySelector('[data-home-action=push]').click()`);
+    }
+    await page.waitFor(`${columnIds('merged')}.length === 2`, 'the merged cards', 40_000);
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-board-column=ship]').innerText`),
+      /Nothing here/,
+    );
+    assert.match(await page.eval<string>(`${card(id('merged1'))}.innerText`), /PR #198 merged/);
+    assert.deepEqual(await page.eval(columnIds('needs')), [id('waiting'), id('perm')]);
+    assert.deepEqual(await page.eval(columnIds('working')), [id('working')]);
+    assert.deepEqual(await page.eval(columnIds('idle')), [id('draft')]);
+    // The status line: the state in its color and the tool it asks for.
+    assert.match(
+      await page.eval<string>(`${card(id('perm'))}.innerText`),
+      /ABC-2[\s\S]*Fix the flaky test[\s\S]*Needs permission[\s\S]*Bash/,
+    );
+    await screenshot(page, screenshotDir, 'b1-board.png');
+
+    // 4. Quick reply. Never on a permission request: Open in the field's place.
+    await page.waitFor(`!!${card(id('perm'))}.querySelector('[data-quick-reply-open]')`, 'Open');
+    assert.equal(
+      await page.eval(`!!${card(id('perm'))}.querySelector('[data-quick-reply]')`),
+      false,
+    );
+    // Never over a draft: it says so and offers to open it.
+    await page.waitFor(
+      `!!${card(id('draft'))}.querySelector('[data-quick-reply-draft]')`,
+      'the draft note',
+    );
+    assert.equal(
+      await page.eval(`!!${card(id('draft'))}.querySelector('[data-quick-reply]')`),
+      false,
+    );
+    assert.equal(
+      await page.eval<string>(
+        `${card(id('draft'))}.querySelector('[data-quick-reply-draft]').textContent`,
+      ),
+      'Has an unsent prompt; open it',
+    );
+    // Never on Merged.
+    assert.equal(
+      await page.eval(`!!${card(id('merged1'))}.querySelector('[data-quick-reply]')`),
+      false,
+    );
+
+    // Sent to a waiting workspace: always shown on Needs you; ↵ sends, the field clears.
+    const reply = async (key: string, text: string) => {
+      await page.eval(`${card(id(key))}.focus()`);
+      await page.waitFor(
+        `!!${card(id(key))}.querySelector('[data-quick-reply]')`,
+        `${key}'s field`,
+      );
+      await typeInField(page, `[data-board-card="${id(key)}"] [data-quick-reply]`, text);
+    };
+    await reply('waiting', 'Use the brand blue');
+    await until(
+      () => read(`input-${id('waiting')}.txt`).includes('Use the brand blue'),
+      'the reply',
+    );
+    await page.waitFor(`!!${card(id('waiting'))}.querySelector('[data-quick-reply-sent]')`, 'Sent');
+    assert.match(
+      await page.eval<string>(
+        `${card(id('waiting'))}.querySelector('[data-quick-reply-sent]').textContent`,
+      ),
+      /Sent to Claude/,
+    );
+    // To a working one, which reads it after this step.
+    await reply('working', 'Also log refusals');
+    await until(
+      () => read(`input-${id('working')}.txt`).includes('Also log refusals'),
+      'the reply',
+    );
+    assert.match(
+      await page.eval<string>(
+        `${card(id('working'))}.querySelector('[data-quick-reply-sent]').textContent`,
+      ),
+      /Claude reads it after this step/,
+    );
+    await screenshot(page, screenshotDir, 'b2-sent.png');
+
+    // 5. Cards move by themselves: the waiting workspace stops and goes to Idle.
+    await page.waitFor(
+      `!${card(id('waiting'))}.querySelector('[data-quick-reply-sent]')`,
+      'the field back',
+      5_000,
+    );
+    await reply('waiting', 'stop');
+    await page.waitFor(`${columnOf(id('waiting'))} === 'idle'`, 'the card in Idle');
+    assert.deepEqual(await page.eval(columnIds('needs')), [id('perm')]);
+    // The permission request answered in its terminal: Working, then Needs you again.
+    await page.eval(`${card(id('perm'))}.click()`);
+    await page.waitFor(`!document.querySelector('[data-home-board]')`, 'the workspace');
+    // ↵ answers the permission prompt (spec §10.2); then Claude waits for input.
+    await typeInTerminal(page, 'prompt');
+    await waitState('perm', 'Working');
+    await typeInTerminal(page, 'input');
+    await waitState('perm', 'Waiting for input');
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
+    await page.waitFor(
+      `${columnOf(id('perm'))} === 'needs' && !!${card(id('perm'))}.querySelector('[data-quick-reply]')`,
+      'its field now',
+    );
+
+    // 6. The keyboard: ↓ from the Board to the first card, ← → across columns, ↑ ↓ within.
+    await page.eval(`document.querySelector('[data-home-board]').focus()`);
+    await pressKey(page, 'ArrowDown');
+    assert.equal(await page.eval(activeCard), id('perm'));
+    await pressKey(page, 'ArrowRight');
+    assert.equal(await page.eval(activeCard), id('working'));
+    await pressKey(page, 'ArrowRight');
+    const idleFirst = await page.eval<string>(`${columnIds('idle')}[0]`);
+    assert.equal(await page.eval(activeCard), idleFirst);
+    await pressKey(page, 'ArrowDown');
+    assert.equal(await page.eval(activeCard), await page.eval<string>(`${columnIds('idle')}[1]`));
+    await pressKey(page, 'ArrowUp');
+    assert.equal(await page.eval(activeCard), idleFirst);
+    // → skips the empty Ready to ship.
+    await pressKey(page, 'ArrowRight');
+    assert.equal(await page.eval(columnOf(await page.eval<string>(activeCard))), 'merged');
+    await pressKey(page, 'ArrowLeft');
+    await pressKey(page, 'ArrowLeft');
+    assert.equal(await page.eval(activeCard), id('working'));
+    // Focus shows the card's actions; Tab reaches them.
+    assert.equal(
+      await page.eval(
+        `getComputedStyle(${card(id('working'))}.querySelector('[data-home-action=delete]')).display !== 'none'`,
+      ),
+      true,
+      'actions on focus',
+    );
+    await screenshot(page, screenshotDir, 'b3-focus.png');
+    await pressKey(page, 'Tab');
+    assert.equal(
+      await page.eval(
+        `${card(id('working'))}.contains(document.activeElement) && document.activeElement !== ${card(id('working'))}`,
+      ),
+      true,
+      'Tab into the card',
+    );
+    // Delete on a focused card opens Delete workspace; Esc closes it.
+    await page.eval(`${card(id('working'))}.focus()`);
+    await pressKey(page, 'Backspace');
+    await page.waitFor(`${dialogText}.includes('Delete ABC-3')`, 'Delete workspace');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+    // ↵ opens the workspace.
+    await page.eval(`${card(id('working'))}.focus()`);
+    await pressKey(page, 'Enter');
+    await page.waitFor(`!document.querySelector('[data-home-board]')`, 'the workspace by ↵');
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
+
+    // 7. Delete n merged: one dialog for both.
+    await page.eval(
+      `document.querySelector('[data-board-column=merged] [data-home-action=delete-merged]').click()`,
+    );
+    await page.waitFor(`${dialogText}.includes('Delete 2 merged workspaces')`, 'Delete n merged');
+    assert.match(
+      await page.eval<string>(dialogText),
+      /ABC-198[\s\S]*ABC-187|ABC-187[\s\S]*ABC-198/,
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+
+    // 8. Drag to delete. Esc cancels: nothing moves, nothing is deleted.
+    const draft = id('draft');
+    await lift(page, draft);
+    await page.waitFor(`!!document.querySelector('[data-drop-zone]')`, 'the zone');
+    assert.equal(await page.eval(`${card(draft)}.dataset.boardLifted`), 'true', 'the dashed slot');
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-drop-zone]').innerText`),
+      /Drop to delete/,
+    );
+    // The columns shrink so the zone covers nothing.
+    assert.equal(
+      await page.eval(`(() => {
+        const zone = document.querySelector('[data-drop-zone]').getBoundingClientRect();
+        return [...document.querySelectorAll('[data-board-column]')].every((c) => c.getBoundingClientRect().bottom <= zone.top);
+      })()`),
+      true,
+    );
+    await screenshot(page, screenshotDir, 'b4-lifted.png');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('[data-board-float]')`, 'the drag to end');
+    const here = await centre(page, card(draft));
+    await mouse(page, 'mouseReleased', here.x, here.y);
+    assert.equal(await page.eval(`!!document.querySelector('dialog[open]')`), false);
+    // Dropped on a column: nothing happens.
+    await lift(page, draft);
+    const column = await centre(page, `document.querySelector('[data-board-column=working]')`);
+    await mouse(page, 'mouseMoved', column.x, column.y);
+    await mouse(page, 'mouseReleased', column.x, column.y);
+    await page.waitFor(`!document.querySelector('[data-board-float]')`, 'the drag to end');
+    await sleep(300);
+    assert.equal(await page.eval(`!!document.querySelector('dialog[open]')`), false);
+    assert.equal(await page.eval(columnOf(draft)), 'idle');
+    // Over the zone it names the card; the drop opens Delete workspace, Cancel focused.
+    const dropOnZone = async () => {
+      await lift(page, draft);
+      const zone = await centre(page, `document.querySelector('[data-drop-zone]')`);
+      await mouse(page, 'mouseMoved', zone.x, zone.y);
+      await page.waitFor(
+        `document.querySelector('[data-drop-zone]')?.dataset.dropZone === 'over'`,
+        'over the zone',
+      );
+      // The lifted card stays under the pointer.
+      await sleep(100);
+      const lifted = await centre(page, `document.querySelector('[data-board-float]')`);
+      assert.ok(
+        Math.abs(lifted.y - zone.y) < 120,
+        `the lifted card at ${lifted.y}, the pointer at ${zone.y}`,
+      );
+      return zone;
+    };
+    let zone = await dropOnZone();
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-drop-zone]').innerText`),
+      /Release to delete ABC-6[\s\S]*You confirm in the next step/,
+    );
+    await screenshot(page, screenshotDir, 'b5-over.png');
+    await mouse(page, 'mouseReleased', zone.x, zone.y);
+    await page.waitFor(`${dialogText}.includes('Delete ABC-6')`, 'Delete workspace');
+    await page.waitFor(
+      `document.activeElement?.textContent?.startsWith('Cancel')`,
+      'Cancel focused',
+    );
+    await screenshot(page, screenshotDir, 'b6-dialog.png');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+    assert.equal(await page.eval(columnOf(draft)), 'idle', 'nothing deleted on Cancel');
+    zone = await dropOnZone();
+    await mouse(page, 'mouseReleased', zone.x, zone.y);
+    await page.waitFor(`${dialogText}.includes('Delete ABC-6')`, 'Delete workspace');
+    await submitDialog(page);
+    await page.waitFor(`!${card(draft)}`, 'the card gone', 30_000);
+    assert.equal(fs.existsSync(ws.draft?.tree as string), false, 'its worktree deleted');
+
+    // 9. Personal: its own layout (List), and a suspended Claude resumed for a reply.
+    await clickLabel(page, 'Select Personal');
+    await create('sleepy', 'api', 'ABC-7 Pagination');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'stop');
+    await waitState('sleepy', 'Done');
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`${layout} === 'list'`, "Personal's own layout");
+    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
+    await page.waitFor(
+      `!!${card(id('sleepy'))}?.querySelector('[data-suspended]')`,
+      'suspended',
+      30_000,
+    );
+    assert.equal(await page.eval(columnOf(id('sleepy'))), 'idle');
+    const startsBefore = read(`starts-${id('sleepy')}.txt`)
+      .trim()
+      .split('\n').length;
+    await reply('sleepy', 'Resume and add page sizes');
+    await until(
+      () => read(`input-${id('sleepy')}.txt`).includes('Resume and add page sizes'),
+      'the reply after the resume',
+      40_000,
+    );
+    const starts = read(`starts-${id('sleepy')}.txt`)
+      .trim()
+      .split('\n');
+    assert.equal(starts.length, startsBefore + 1, 'Claude started again');
+    assert.match(starts.at(-1) ?? '', /--resume/);
+
+    // 10. Both layouts are remembered per profile across a restart.
+    await app.stop();
+    app = await launch();
+    page = app.page;
+    await page.waitFor(`${layout} !== null`, 'the switch');
+    await clickLabel(page, 'Select Work');
+    await page.waitFor(
+      `${layout} === 'board' && !!document.querySelector('[data-home-board]')`,
+      "Work's Board",
+    );
+    await clickLabel(page, 'Select Personal');
+    await page.waitFor(`${layout} === 'board'`, "Personal's Board");
+    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
+    await clickLabel(page, 'Select Work');
+    await page.waitFor(`${layout} === 'board'`, 'Work still on the Board');
+    await clickLabel(page, 'Select Personal');
+    await page.waitFor(
+      `${layout} === 'list' && !!document.querySelector('[data-home-overview]')`,
+      'Personal on the List',
+    );
+
+    console.log('e2e-board: ok');
+  } catch (error) {
+    // What the window showed, for the failure's context.
+    const shown = await app?.page.eval<string>(`document.body.innerText`).catch(() => '');
+    console.error(`The window showed:\n${shown?.slice(0, 2000)}`);
+    if (app) await screenshot(app.page, screenshotDir, 'failure.png').catch(() => {});
+    throw error;
+  } finally {
+    await app?.stop();
+    fx.cleanup();
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

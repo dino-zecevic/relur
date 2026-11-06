@@ -4,116 +4,29 @@ import {
   HOME_SECTIONS,
   type HomeSection,
   homeSections,
-  prNumber,
   projectCounts,
-  prText,
-  type ShipState,
-  shipCandidates,
-  shipStep,
-  workingFor,
 } from '@shared/home';
-import { describeSplit, formatBytes, type MemorySnapshot, workspaceMemory } from '@shared/memory';
+import type { MemorySnapshot } from '@shared/memory';
 import type { Profile, Project } from '@shared/schemas';
-import { backgroundNote, type StatusGlyph as Glyph } from '@shared/status';
 import { SUSPENDED_TOOLTIP } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
-import {
-  canContinue,
-  planLimitReached,
-  unfinishedTooltip,
-  workspaceGlyph,
-} from '@shared/unfinished';
-import { type Workspace, workspaceMerged } from '@shared/workspaces';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { trpcClient, useTRPC } from '../trpc';
+import type { Workspace } from '@shared/workspaces';
+import { useEffect, useRef, useState } from 'react';
 import { Kbd, keyHint } from '../ui/controls';
-import { useLaunching } from '../ui/launching';
 import { StatusGlyph } from '../ui/StatusGlyph';
 import { useSuspended } from '../ui/suspended';
-import { GateAnswer } from './WorkflowViews';
+import {
+  actionClass,
+  type HomeActions,
+  ring,
+  Sep,
+  TONE,
+  useHomeItems,
+  useNow,
+  useShipStates,
+} from './home-items';
 
-/** What Home's rows and quick actions do; the app opens views and dialogs. */
-export interface HomeActions {
-  /** Opens the workspace, on its Claude tab when it has one. */
-  open: (workspace: Workspace) => void;
-  openProject: (project: Project) => void;
-  /** Review at a gate: the workspace with its spec view (spec §13.8). */
-  review: (workspace: Workspace) => void;
-  /** Commit…: the workspace with the Changes panel and its commit box in focus. */
-  commit: (workspace: Workspace) => void;
-  /** Push in a linked workspace: the workspace with its Changes panel (§21.5). */
-  openChanges: (workspace: Workspace) => void;
-  /** The Delete workspace dialog (spec §14.2). */
-  delete: (workspace: Workspace) => void;
-  /** Delete n merged workspaces: one dialog for all of them. */
-  deleteMerged: (workspaces: Workspace[]) => void;
-  /** Null without projects. */
-  newWorkspace: (() => void) | null;
-  addProject: () => void;
-  guide: () => void;
-}
-
-/** A row's action button (components.md, Home overview); `hover` ones show on hover and focus. */
-type ActionKind = 'primary' | 'secondary' | 'ghost' | 'danger';
-
-const ACTION: Record<ActionKind, string> = {
-  primary: 'bg-fg text-on-fg font-medium enabled:hover:opacity-[0.86]',
-  secondary: 'border border-line-strong text-fg enabled:hover:bg-raised',
-  ghost: 'text-fg-muted enabled:hover:bg-band-strong enabled:hover:text-fg',
-  danger: 'text-st-error enabled:hover:bg-band-strong',
-};
-
-const ring =
-  'outline-none focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--color-term),0_0_0_3.5px_var(--color-focus)]';
-
-export const actionClass = (kind: ActionKind) =>
-  `inline-flex h-6.5 shrink-0 items-center gap-1.5 rounded-[5px] px-2.5 text-md whitespace-nowrap disabled:opacity-40 ${ring} ${ACTION[kind]}`;
-
-function Action({
-  kind,
-  title,
-  onClick,
-  disabled,
-  data,
-  children,
-}: {
-  kind: ActionKind;
-  title?: string;
-  onClick: () => void;
-  disabled?: boolean;
-  /** `data-home-action`, for tests and the e2e checks. */
-  data?: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      data-home-action={data}
-      className={actionClass(kind)}
-      title={title}
-      disabled={disabled}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-const Sep = () => <span className="flex-none text-fg-subtle">·</span>;
-
-/** The detail line's parts after the project. */
-type Part = { text: string; tone?: 'perm' | 'input' | 'appr' | 'strong' };
-
-const TONE: Record<NonNullable<Part['tone']>, string> = {
-  perm: 'flex-none font-medium text-st-permission',
-  input: 'flex-none font-medium text-st-input',
-  appr: 'flex-none font-medium text-st-approval',
-  strong: 'flex-none font-medium text-fg',
-};
+export type { HomeActions } from './home-items';
 
 /**
  * Home's Overview (spec §6.7): the profile's workspaces that need you, are
@@ -135,52 +48,10 @@ export function HomeOverview({
   memory: MemorySnapshot | null;
   actions: HomeActions;
 }) {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-  const launching = useLaunching();
   const suspended = useSuspended();
-
-  // What Done workspaces have left to ship, summed over their repositories.
-  const candidates = shipCandidates(workspaces);
-  const repoQueries = candidates.flatMap((w) =>
-    w.repos.map((r) => ({
-      workspaceId: w.id,
-      input: r.primary ? { workspaceId: w.id } : { workspaceId: w.id, projectId: r.projectId },
-    })),
-  );
-  const states = useQueries({
-    queries: repoQueries.map((q) =>
-      trpc.changes.state.queryOptions(q.input, {
-        refetchInterval: 15_000,
-        staleTime: 0,
-        retry: false,
-      }),
-    ),
-  });
-  const ship = (workspaceId: string): ShipState | null => {
-    const mine = repoQueries.flatMap((q, i) => (q.workspaceId === workspaceId ? [states[i]] : []));
-    if (mine.length === 0 || mine.some((s) => !s?.data)) return null;
-    return mine.reduce<ShipState>(
-      (sum, s) => ({
-        uncommitted: sum.uncommitted + (s?.data?.uncommitted ?? 0),
-        unpushed: sum.unpushed + (s?.data?.unpushed ?? 0),
-      }),
-      { uncommitted: 0, unpushed: 0 },
-    );
-  };
-  // A workspace that becomes Done is checked again at once.
-  const doneKey = candidates.map((w) => `${w.id}@${w.stateSince ?? ''}`).join(',');
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch when a workspace becomes Done
-  useEffect(() => {
-    void queryClient.invalidateQueries({ queryKey: trpc.changes.state.pathKey() });
-  }, [doneKey]);
-
-  // "working for n min" moves on by itself.
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
+  const ship = useShipStates(workspaces);
+  const now = useNow();
+  const item = useHomeItems({ profile, sessions, memory, actions, ship, now });
 
   const sections = homeSections(workspaces, ship);
   const total = HOME_SECTIONS.reduce((n, s) => n + sections[s].length, 0);
@@ -207,15 +78,6 @@ export function HomeOverview({
     next?.scrollIntoView({ block: 'nearest' });
   };
 
-  const usage = useQuery(trpc.usage.all.queryOptions());
-  const limit = planLimitReached(usage.data?.[profile.id]);
-  const proceed = useMutation(trpc.unfinished.continue.mutationOptions());
-  const dismiss = useMutation(trpc.unfinished.dismiss.mutationOptions());
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: trpc.changes.pathKey() });
-  const push = useMutation(trpc.changes.push.mutationOptions({ onSettled: refresh }));
-  const [errors, setErrors] = useState<Record<string, string | null>>({});
-  const setError = (id: string) => (message: string | null) =>
-    setErrors((e) => (e[id] === message ? e : { ...e, [id]: message }));
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? '';
 
   const quick: QuickAction[] = [
@@ -230,185 +92,7 @@ export function HomeOverview({
   ];
 
   const row = (section: HomeSection, w: Workspace) => {
-    const parts: Part[] = [];
-    const buttons: ReactNode[] = [];
-    const hover: ReactNode[] = [];
-    let glyph: Glyph | null = workspaceGlyph(w, launching.has(w.id));
-    let meta: { text: string; title: string } | null = null;
-    let title: 'bold' | 'muted' | null = null;
-    const error =
-      errors[w.id] ?? (push.variables?.workspaceId === w.id ? push.error?.message : null);
-    const open = (
-      <Action
-        key="open"
-        kind="secondary"
-        data="open"
-        title="Open the Claude tab"
-        onClick={() => actions.open(w)}
-      >
-        Open
-      </Action>
-    );
-    if (section === 'needs') {
-      if (w.state === 'needs-permission') {
-        parts.push({ text: 'Needs permission', tone: 'perm' });
-        if (w.stateMessage) parts.push({ text: w.stateMessage });
-        buttons.push(open);
-      } else if (w.state === 'needs-input') {
-        parts.push({ text: 'Waiting for input', tone: 'input' });
-        if (w.stateMessage) parts.push({ text: w.stateMessage });
-        buttons.push(open);
-      } else if (w.state === 'awaiting-approval') {
-        parts.push({ text: 'At' }, { text: w.workflow?.label ?? 'a gate', tone: 'appr' });
-        if (w.workflow?.file) {
-          buttons.push(
-            <Action
-              key="review"
-              kind="secondary"
-              data="review"
-              title="Open the spec"
-              onClick={() => actions.review(w)}
-            >
-              Review
-            </Action>,
-          );
-        }
-        if (w.workflow) {
-          buttons.push(
-            <GateAnswer
-              key="answer"
-              workspaceId={w.id}
-              workflow={w.workflow}
-              state={w.state}
-              claudeRunning={sessions.some(
-                (s) => s.workspaceId === w.id && s.kind === 'claude' && s.status !== 'exited',
-              )}
-              className={(primary) => actionClass(primary ? 'primary' : 'secondary')}
-              onError={setError(w.id)}
-            />,
-          );
-        }
-        if (!w.workflow?.file) buttons.unshift(open);
-      } else if (w.unfinished) {
-        parts.push(
-          { text: 'Unfinished', tone: 'strong' },
-          { text: unfinishedTooltip(w.unfinished) },
-        );
-        buttons.push(
-          canContinue(w.unfinished.kind) ? (
-            <Action
-              key="continue"
-              kind="secondary"
-              data="continue"
-              disabled={!!limit || proceed.isPending}
-              title={limit ?? 'Sends the continue prompt from Edit profile'}
-              onClick={() => proceed.mutate({ workspaceIds: [w.id] })}
-            >
-              Continue
-            </Action>
-          ) : (
-            open
-          ),
-          <Action
-            key="dismiss"
-            kind="ghost"
-            data="dismiss"
-            title="Mark as finished"
-            onClick={() => dismiss.mutate({ workspaceId: w.id })}
-          >
-            Dismiss
-          </Action>,
-        );
-      }
-    } else if (section === 'working') {
-      glyph = 'working';
-      parts.push({ text: workingFor(w.stateSince, now) });
-      const background = backgroundNote(w.state, w.background);
-      if (background) parts.push({ text: background });
-      const used = workspaceMemory(memory, w.id);
-      if (used) meta = { text: formatBytes(used.total), title: describeSplit(used) };
-      hover.push(
-        <Action
-          key="open"
-          kind="ghost"
-          data="open"
-          title="Open the workspace"
-          onClick={() => actions.open(w)}
-        >
-          Open
-        </Action>,
-      );
-    } else if (section === 'ship') {
-      glyph = 'done';
-      title = 'bold';
-      const step = shipStep(w, ship(w.id));
-      if (step?.kind === 'commit') {
-        parts.push({ text: `${step.files} ${step.files === 1 ? 'file' : 'files'} not committed` });
-        buttons.push(
-          <Action
-            key="commit"
-            kind="secondary"
-            data="commit"
-            title={`Review and commit ${step.files} ${step.files === 1 ? 'file' : 'files'}`}
-            onClick={() => actions.commit(w)}
-          >
-            Commit…
-          </Action>,
-        );
-      } else if (step?.kind === 'push') {
-        const linked = w.repos.length > 1;
-        parts.push({
-          text: `${step.commits} ${step.commits === 1 ? 'commit' : 'commits'} not pushed`,
-        });
-        buttons.push(
-          <Action
-            key="push"
-            kind="secondary"
-            data="push"
-            disabled={push.isPending && push.variables?.workspaceId === w.id}
-            title={
-              linked ? 'Push in the Changes panel, repository by repository' : `Push ${w.branch}`
-            }
-            onClick={() => (linked ? actions.openChanges(w) : push.mutate({ workspaceId: w.id }))}
-          >
-            {push.isPending && push.variables?.workspaceId === w.id ? 'Pushing…' : 'Push'}
-          </Action>,
-        );
-      } else if (step?.kind === 'pr') {
-        parts.push({ text: prText(step.pr) });
-        const url = step.pr.url;
-        if (url) {
-          buttons.push(
-            <Action
-              key="pr"
-              kind="secondary"
-              data="pr"
-              title={`Open ${prNumber(step.pr) ? `PR ${prNumber(step.pr)}` : 'the pull request'} in the browser`}
-              onClick={() => void trpcClient.shell.openExternal.mutate({ url })}
-            >
-              View PR <span aria-hidden>↗</span>
-            </Action>,
-          );
-        }
-      }
-    } else {
-      glyph = 'exited';
-      title = 'muted';
-      const merged = workspaceMerged(w);
-      parts.push({ text: merged ? prText(merged) : 'Merged' });
-      hover.push(
-        <Action
-          key="delete"
-          kind="danger"
-          data="delete"
-          title="Delete the workspace and its worktree"
-          onClick={() => actions.delete(w)}
-        >
-          Delete
-        </Action>,
-      );
-    }
-
+    const { glyph, parts, dotted, buttons, hover, meta, title, error } = item(section, w);
     return (
       // biome-ignore lint/a11y/useSemanticElements: a row holds its own buttons, so it can't be one
       <div
@@ -450,7 +134,7 @@ export function HomeOverview({
             {parts.map((p, i) => (
               // The project, then the parts; Needs you's run on after one separator.
               <span key={p.text} className="contents">
-                {i === 0 || section === 'working' ? <Sep /> : null}
+                {i === 0 || dotted ? <Sep /> : null}
                 <span className={p.tone ? TONE[p.tone] : 'min-w-0 truncate'}>{p.text}</span>
               </span>
             ))}

@@ -654,6 +654,20 @@ async function main() {
     await sleep(800);
     await shoot('home-overview', null);
 
+    // 7b. The same workspaces on the Board, then back to the List it remembers.
+    await page.eval(`document.querySelector('[data-home-layout-option="board"]').click()`);
+    await page.waitFor(
+      `!!document.querySelector('[data-home-board] [data-board-card]')`,
+      'the Board',
+    );
+    await sleep(800);
+    await shoot('home-board', null);
+    await page.eval(`document.querySelector('[data-home-layout-option="list"]').click()`);
+    await page.waitFor(
+      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'sections'`,
+      'the List again',
+    );
+
     // 8. Edit profile.
     const openEdit = async () => {
       if (

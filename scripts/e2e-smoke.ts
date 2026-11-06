@@ -455,7 +455,17 @@ exec sleep 600
         `process.mainModule.require('electron').nativeTheme.themeSource = '${theme}'`,
       );
       await page.waitFor(`document.documentElement.dataset.theme === '${theme}'`, theme);
-      await page.waitFor(`${shownImage} === 'home-overview-${theme}'`, `the ${theme} screenshot`);
+      // The Overview's, loaded, then the Board's (lazily loaded further down), in the same theme.
+      await page.waitFor(
+        `${shownImage}.split(',')[0] === 'home-overview-${theme}'`,
+        `the ${theme} screenshot`,
+      );
+      assert.equal(
+        await page.eval(
+          `[...document.querySelectorAll('[data-guide-image]')].filter((i) => i.offsetParent).map((i) => i.dataset.guideImage).join()`,
+        ),
+        `home-overview-${theme},home-board-${theme}`,
+      );
     }
     await mainProcess.eval(
       `process.mainModule.require('electron').nativeTheme.themeSource = 'system'`,

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BOARD_COLUMNS,
+  boardColumn,
+  boardColumns,
+  type HomeSection,
   homeSection,
   homeSections,
+  permissionTool,
   prNumber,
   projectCounts,
   prText,
+  quickReply,
   type ShipState,
   shipCandidates,
   shipStep,
@@ -212,5 +218,139 @@ describe('projectCounts', () => {
       { projectId: 'api', count: 1, linked: 0 },
       { projectId: 'ui', count: 0, linked: 0 },
     ]);
+  });
+});
+
+describe('boardColumns', () => {
+  const merged = { repos: [repo('web', true, { pr: pr('merged'), hasCommits: true })] };
+  const all = () => [
+    ws('needs-permission', { stateSince: '2026-11-01T11:00:00.000Z' }),
+    ws('needs-input', { stateSince: '2026-11-01T10:00:00.000Z' }),
+    ws('awaiting-approval'),
+    ws('exited', {
+      unfinished: { kind: 'working', since: '2026-11-01T09:00:00.000Z', stopped: 0 },
+    }),
+    ws('working', { background: 2 }),
+    ws('done'),
+    ws('done', merged),
+    ws('interrupted', { lastActivityAt: '2026-11-01T08:00:00.000Z' }),
+    ws('exited', { lastActivityAt: '2026-11-01T09:00:00.000Z' }),
+    ws('starting'),
+    ws('error'),
+    ws('done', { lastActivityAt: '2026-11-01T07:00:00.000Z' }),
+  ];
+
+  it('matches the List: each section is its column, in the same order', () => {
+    const list = all();
+    const ship = (id: string) => (id === list[5]?.id ? dirty : clean);
+    const sections = homeSections(list, ship);
+    const columns = boardColumns(list, ship);
+    const pairs: [HomeSection, keyof typeof columns][] = [
+      ['needs', 'needs'],
+      ['working', 'working'],
+      ['ship', 'ship'],
+      ['clean', 'merged'],
+    ];
+    for (const [section, column] of pairs) {
+      expect(columns[column].map((w) => w.id)).toEqual(sections[section].map((w) => w.id));
+    }
+    for (const w of list) {
+      const section = homeSection(w, ship(w.id));
+      expect(boardColumn(w, ship(w.id))).toBe(
+        section === null ? 'idle' : section === 'clean' ? 'merged' : section,
+      );
+    }
+  });
+
+  it('puts every workspace in exactly one column, the rest under Idle by last activity', () => {
+    const list = all();
+    const columns = boardColumns(list, () => clean);
+    const ids = BOARD_COLUMNS.flatMap((c) => columns[c].map((w) => w.id));
+    expect(new Set(ids).size).toBe(list.length);
+    expect(ids).toHaveLength(list.length);
+    // Interrupted, exited, starting, error and Done with nothing to ship.
+    expect(columns.idle.map((w) => w.state).sort()).toEqual(
+      ['done', 'done', 'error', 'exited', 'interrupted', 'starting'].sort(),
+    );
+    const dated = columns.idle.filter((w) => w.lastActivityAt).map((w) => w.state);
+    expect(dated).toEqual(['exited', 'interrupted', 'done']);
+  });
+
+  it('moves a workspace when its state changes', () => {
+    const w = ws('working');
+    expect(boardColumn(w, null)).toBe('working');
+    expect(boardColumn({ ...w, state: 'needs-input' }, null)).toBe('needs');
+    expect(boardColumn({ ...w, state: 'interrupted' }, null)).toBe('idle');
+    expect(boardColumn({ ...w, state: 'done' }, dirty)).toBe('ship');
+    expect(boardColumn({ ...w, state: 'done', ...merged }, dirty)).toBe('merged');
+  });
+});
+
+describe('quickReply', () => {
+  const running = { status: 'running' as const, resuming: false };
+  const suspended = { status: 'suspended' as const, resuming: false };
+  const facts = (claude: typeof running | typeof suspended | null, draft = false) => ({
+    claude,
+    draft,
+  });
+
+  it('offers the field where Claude waits at its prompt or works', () => {
+    for (const state of [
+      'working',
+      'needs-input',
+      'awaiting-approval',
+      'done',
+      'interrupted',
+    ] as const) {
+      expect(quickReply(ws(state), 'idle', facts(running))).toBe('field');
+    }
+  });
+
+  it('offers it on a suspended Claude, which resumes first', () => {
+    expect(quickReply(ws('starting'), 'idle', facts(suspended))).toBe('field');
+    expect(quickReply(ws('done'), 'ship', facts(suspended))).toBe('field');
+  });
+
+  it('never on a permission request: Open instead', () => {
+    expect(quickReply(ws('needs-permission'), 'needs', facts(running))).toBe('open');
+    const cut = { kind: 'permission' as const, since: '2026-11-01T10:00:00.000Z', stopped: 0 };
+    expect(quickReply(ws('interrupted', { unfinished: cut }), 'needs', facts(running))).toBe(
+      'open',
+    );
+  });
+
+  it('offers it on a merged workspace that needs you, whose card is under Needs you', () => {
+    const merged = { repos: [repo('web', true, { pr: pr('merged'), hasCommits: true })] };
+    const w = ws('needs-input', merged);
+    expect(boardColumn(w, null)).toBe('needs');
+    expect(quickReply(w, boardColumn(w, null), facts(running))).toBe('field');
+    expect(
+      quickReply(ws('done', merged), boardColumn(ws('done', merged), null), facts(running)),
+    ).toBe('none');
+  });
+
+  it('never over a draft', () => {
+    expect(quickReply(ws('needs-input'), 'needs', facts(running, true))).toBe('draft');
+  });
+
+  it('never on Merged, an exited Claude, none at all, or one not ready', () => {
+    expect(quickReply(ws('done'), 'merged', facts(running))).toBe('none');
+    expect(
+      quickReply(ws('exited'), 'idle', facts({ status: 'exited', resuming: false } as never)),
+    ).toBe('none');
+    expect(quickReply(ws('done'), 'idle', facts(null))).toBe('none');
+    expect(quickReply(ws('starting'), 'idle', facts(running))).toBe('none');
+    expect(quickReply(ws('error'), 'idle', facts(running))).toBe('none');
+    expect(quickReply(ws('done'), 'idle', facts({ status: 'running', resuming: true }))).toBe(
+      'none',
+    );
+  });
+});
+
+describe('permissionTool', () => {
+  it('names the tool of a permission request', () => {
+    expect(permissionTool('Claude needs your permission to use Bash')).toBe('Bash');
+    expect(permissionTool('Something else')).toBe('Something else');
+    expect(permissionTool(null)).toBeNull();
   });
 });

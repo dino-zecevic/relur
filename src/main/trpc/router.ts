@@ -2,6 +2,7 @@ import type { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { editorFor } from '@shared/editor';
+import { boardColumn, QUICK_REPLY_REFUSAL, quickReply } from '@shared/home';
 import type { Editor } from '@shared/schemas';
 import {
   EditorSchema,
@@ -770,6 +771,31 @@ export function createAppRouter({
           };
         }, signal),
       ),
+      /**
+       * Home's quick reply (spec §6.7): types the text into the workspace's
+       * Claude, as Continue does, after the same checks as the card: never
+       * on a permission request or over a draft, never on an exited Claude.
+       */
+      quickReply: publicProcedure
+        .input(z.object({ workspaceId: IdSchema, text: z.string().trim().min(1).max(20_000) }))
+        .mutation(async ({ input }) => {
+          const record = workspaceRecords.get(input.workspaceId);
+          if (!record) throw new Error('This workspace no longer exists');
+          const w = workflow.decorate(record);
+          const claude =
+            host
+              .list()
+              .find(
+                (s) => s.workspaceId === w.id && s.kind === 'claude' && s.status !== 'exited',
+              ) ?? null;
+          // The card's column: what is left to ship decides only between two that both offer it.
+          const offer = quickReply(w, boardColumn(w, null), {
+            claude,
+            draft: claude ? suspend.hasDraft(claude.id) : false,
+          });
+          if (offer !== 'field') throw new Error(QUICK_REPLY_REFUSAL[offer]);
+          await terminals.sendToClaude(w.id, input.text);
+        }),
       /** The project's git worktrees no workspace uses (spec §13.6). */
       otherWorktrees: publicProcedure
         .input(projectId)
@@ -1071,6 +1097,8 @@ export function createAppRouter({
         .mutation(({ input }) => terminals.startClaudeInProject(input.projectId)),
       /** Each running workspace Claude's idle clock: why not suspended, or when (spec §9.8). */
       suspendClocks: publicProcedure.query(() => suspend.clocks()),
+      /** Workspaces whose Claude's prompt holds a draft: no quick reply there (spec §6.7). */
+      drafts: publicProcedure.query(() => suspend.drafts()),
       /** The projects whose main-checkout Claude is kept running (spec §9.8). */
       keptMainCheckouts: publicProcedure.query(() => workspaceRecords.keptMainCheckouts()),
       setMainCheckoutKept: publicProcedure

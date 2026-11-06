@@ -302,6 +302,10 @@ describe('SuspendService (spec §9.8)', () => {
     host.add('b');
     states.ws_b = workspace('done');
     host.type('b', 'half a prompt');
+    // Home's quick reply never types over it (spec §6.7).
+    expect(service.hasDraft('b')).toBe(true);
+    expect(service.hasDraft('a')).toBe(false);
+    expect(service.drafts()).toEqual(['ws_b']);
     service.check();
     pass(10 * MINUTE);
     expect(host.suspended).toEqual(['a']);
@@ -310,6 +314,7 @@ describe('SuspendService (spec §9.8)', () => {
     pass(10 * MINUTE);
     expect(host.suspended).toEqual(['a']);
     hook('UserPromptSubmit', { workspaceId: 'ws_b' }, { prompt: 'go' });
+    expect(service.drafts()).toEqual([]);
     service.check();
     pass(5 * MINUTE);
     expect(host.suspended).toEqual(['a', 'b']);

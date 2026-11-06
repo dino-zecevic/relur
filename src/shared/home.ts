@@ -1,4 +1,4 @@
-import { needsYou } from './status';
+import { needsYou, type WorkspaceState } from './status';
 import { type PrStatus, type Workspace, workspaceMerged } from './workspaces';
 
 /**
@@ -144,4 +144,113 @@ export function projectCounts(
       (w) => w.projectId !== projectId && w.repos.some((r) => r.projectId === projectId),
     ).length,
   }));
+}
+
+/**
+ * Home's Board (spec §6.7): the List's sections as columns, and Idle for
+ * every workspace that is in none of them.
+ */
+export type BoardColumn = 'needs' | 'working' | 'idle' | 'ship' | 'merged';
+
+export const BOARD_COLUMNS: readonly BoardColumn[] = ['needs', 'working', 'idle', 'ship', 'merged'];
+
+export const BOARD_COLUMN_TITLE: Record<BoardColumn, string> = {
+  needs: 'Needs you',
+  working: 'Working',
+  idle: 'Idle',
+  ship: 'Ready to ship',
+  merged: 'Merged',
+};
+
+const COLUMN_OF: Record<HomeSection, BoardColumn> = {
+  needs: 'needs',
+  working: 'working',
+  ship: 'ship',
+  clean: 'merged',
+};
+
+/** The column a workspace belongs in: its List section's, else Idle. */
+export const boardColumn = (w: Workspace, ship: ShipState | null): BoardColumn => {
+  const section = homeSection(w, ship);
+  return section ? COLUMN_OF[section] : 'idle';
+};
+
+/**
+ * The profile's workspaces by column: the List's sections in their order,
+ * and Idle (interrupted, suspended, exited, or Done with nothing to ship) by
+ * last activity.
+ */
+export function boardColumns(
+  workspaces: Workspace[],
+  ship: (workspaceId: string) => ShipState | null,
+): Record<BoardColumn, Workspace[]> {
+  const sections = homeSections(workspaces, ship);
+  const activity = (w: Workspace) => w.lastActivityAt ?? w.createdAt;
+  const idle = workspaces
+    .filter((w) => homeSection(w, ship(w.id)) === null)
+    .sort((a, b) => activity(b).localeCompare(activity(a)));
+  return {
+    needs: sections.needs,
+    working: sections.working,
+    idle,
+    ship: sections.ship,
+    merged: sections.clean,
+  };
+}
+
+/**
+ * What a card offers for a quick reply (spec §6.7): `field` to type into,
+ * `open` where Claude shows its permission menu (typed text would answer it),
+ * `draft` where its prompt holds unsent text, or `none`.
+ */
+export type QuickReply = 'field' | 'open' | 'draft' | 'none';
+
+/** States in which a running Claude waits at its prompt or works (and queues input). */
+const REPLY_STATES: readonly WorkspaceState[] = [
+  'working',
+  'needs-input',
+  'awaiting-approval',
+  'done',
+  'interrupted',
+];
+
+export interface QuickReplyFacts {
+  /** The workspace's Claude session: null when it has none. */
+  claude: { status: 'running' | 'suspended' | 'exited'; resuming: boolean } | null;
+  /** Text typed into Claude's prompt and not sent (spec §9.8). */
+  draft: boolean;
+}
+
+/**
+ * Whether a quick reply may be typed into the workspace's Claude: never on a
+ * permission request (also an Unfinished one), nor over a draft; only where
+ * Claude waits at its prompt or works, or is suspended (it resumes first).
+ * Never on Merged, nor on an exited Claude.
+ */
+export function quickReply(
+  w: Pick<Workspace, 'state' | 'unfinished'>,
+  column: BoardColumn,
+  facts: QuickReplyFacts,
+): QuickReply {
+  if (column === 'merged') return 'none';
+  if (w.state === 'needs-permission' || w.unfinished?.kind === 'permission') return 'open';
+  const { claude } = facts;
+  if (!claude || claude.status === 'exited') return 'none';
+  const ready =
+    claude.status === 'suspended' || (!claude.resuming && REPLY_STATES.includes(w.state));
+  if (!ready) return 'none';
+  return facts.draft ? 'draft' : 'field';
+}
+
+/** Why the main process refuses a quick reply, by what `quickReply` says. */
+export const QUICK_REPLY_REFUSAL: Record<Exclude<QuickReply, 'field'>, string> = {
+  open: 'Claude is asking for permission; answer it in the Claude tab',
+  draft: 'Has an unsent prompt; open it',
+  none: "Claude isn't waiting for a message in this workspace",
+};
+
+/** "Bash" from "Claude needs your permission to use Bash", else the message. */
+export function permissionTool(message: string | null): string | null {
+  if (!message) return null;
+  return /permission to use (.+)$/i.exec(message)?.[1]?.trim() ?? message;
 }

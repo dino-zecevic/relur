@@ -210,6 +210,22 @@ export class SuspendService {
     ];
   }
 
+  /**
+   * Whether text was typed into this Claude's prompt and not sent (spec
+   * §9.8): Home's quick reply never types over it (§6.7).
+   */
+  hasDraft(sessionId: string): boolean {
+    return this.facts.get(sessionId)?.draft ?? false;
+  }
+
+  /** The workspaces whose Claude's prompt holds a draft (spec §6.7, quick reply). */
+  drafts(): string[] {
+    return this.deps.host
+      .list()
+      .filter((s) => s.kind === 'claude' && s.workspaceId && this.hasDraft(s.id))
+      .map((s) => s.workspaceId as string);
+  }
+
   /** Suspends every session that has been idle for its profile's whole delay. */
   check(): void {
     const now = this.now();

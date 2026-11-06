@@ -4,9 +4,11 @@ import { formatChord, SHORTCUTS } from '@shared/shortcuts';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import type { Workspace } from '@shared/workspaces';
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTRPC } from '../trpc';
 import { button, isMac, Kbd } from '../ui/controls';
+import { remember } from '../ui/remember';
+import { HomeBoard } from './HomeBoard';
 import { type HomeActions, HomeOverview } from './HomeOverview';
 import { TerminalView } from './TerminalView';
 
@@ -17,6 +19,25 @@ const TABS: { id: HomeTab; name: string; icon: string; tip: string }[] = [
   { id: 'overview', name: 'Overview', icon: '≡', tip: 'What needs you, runs and is ready to ship' },
   { id: 'terminal', name: 'Terminal', icon: '›_', tip: 'The profile’s shell' },
 ];
+
+/** How the Overview shows the workspaces (spec §6.7): the List's sections or the Board's columns. */
+export type HomeLayout = 'list' | 'board';
+
+const LAYOUTS: { id: HomeLayout; label: string; tip: string }[] = [
+  { id: 'list', label: 'List', tip: 'Show as list' },
+  { id: 'board', label: 'Board', tip: 'Show as board' },
+];
+
+/** Remembered per profile, across restarts, in the window's local storage. */
+const layoutKey = (profileId: string) => `home-layout:${profileId}`;
+
+function loadLayout(profileId: string): HomeLayout {
+  try {
+    return localStorage.getItem(layoutKey(profileId)) === 'board' ? 'board' : 'list';
+  } catch {
+    return 'list';
+  }
+}
 
 /** ⌃1 and ⌃2 on macOS, as a workspace's tabs; elsewhere Ctrl with a digit switches profiles. */
 const tabKey = (index: number): string | null =>
@@ -74,6 +95,14 @@ export function HomeView({
     return () => clearTimeout(timer);
   }, [tab]);
 
+  const [layout, setLayout] = useState<HomeLayout>(() => loadLayout(profile.id));
+  const chooseLayout = (next: HomeLayout) => {
+    setLayout(next);
+    remember(layoutKey(profile.id), next);
+  };
+  // Without workspaces both show the empty states, so there is nothing to switch.
+  const switchable = tab === 'overview' && projects.length > 0 && workspaces.length > 0;
+
   const configDir = profile.env.CLAUDE_CONFIG_DIR;
   const error = (homeShell.error ?? restart.error)?.message ?? startClaude.error;
 
@@ -114,9 +143,46 @@ export function HomeView({
             );
           })}
         </div>
+        <span className="flex-1" />
+        {switchable ? (
+          <fieldset
+            aria-label="Show as"
+            title="Remembered for this profile"
+            data-home-layout={layout}
+            className="m-0 mb-[5px] box-border flex h-[26px] min-w-0 gap-0.5 self-center rounded-md border border-line bg-canvas p-0.5"
+          >
+            {LAYOUTS.map((l) => {
+              const on = l.id === layout;
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  data-home-layout-option={l.id}
+                  aria-pressed={on}
+                  title={l.tip}
+                  className={`flex h-5 items-center rounded px-2.5 text-sm outline-none hover:text-fg focus-visible:shadow-[0_0_0_1.5px_var(--color-focus)] ${
+                    on ? 'bg-selected font-medium text-fg' : 'text-fg-muted'
+                  }`}
+                  onClick={() => chooseLayout(l.id)}
+                >
+                  {l.label}
+                </button>
+              );
+            })}
+          </fieldset>
+        ) : null}
       </div>
 
-      {tab === 'overview' ? (
+      {tab === 'overview' && switchable && layout === 'board' ? (
+        <HomeBoard
+          profile={profile}
+          projects={projects}
+          workspaces={workspaces}
+          sessions={sessions}
+          memory={memory}
+          actions={actions}
+        />
+      ) : tab === 'overview' ? (
         <HomeOverview
           profile={profile}
           projects={projects}

@@ -4,6 +4,11 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **Board** on Home: **List | Board** at the right of Home's tabs shows the profile's workspaces as five columns, **Needs you**, **Working**, **Idle**, **Ready to ship** and **Merged**, by the same rules as the List, remembered per profile. Cards move by themselves as Claude works and show their main action and **Delete** on hover and focus; **Delete n merged** sits at the top of Merged. Drag a card to **Drop to delete** at the bottom to open Delete workspace, where you confirm. Arrow keys move between cards and columns, <kbd>↵</kbd> opens, <kbd>Delete</kbd> or <kbd>⌫</kbd> deletes.
+- **Quick reply** on the Board's cards: type a message and press ↵ to send it to that workspace's Claude without opening it; a suspended Claude resumes first. It is never offered on a permission request (Open instead), over a prompt you typed and didn't send, or on Merged workspaces.
+
 ## [0.4.3] - 2026-11-06
 
 ### Added
