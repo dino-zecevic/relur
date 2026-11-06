@@ -15,7 +15,7 @@ An Electron desktop app (macOS and Linux) for running parallel Claude Code sessi
 ## Commands
 
 - `npm run check`: lint (biome), typecheck, unit tests (vitest), check:name, check:notices.
-- `npm run verify`: check, then e2e. Run before every commit.
+- `npm run verify`: check, then e2e (all suites, both builds). Run once when a branch is done, before it's merged.
 - `npm run e2e`: builds, then the e2e tests on the production build and the dev server (several minutes). They use a fake `claude`, never the real one.
 - `npm run gen:notices`: regenerates `THIRD_PARTY_NOTICES` after a dependency change.
 - `scripts/linux-check.sh`: the Linux check in Docker (`PLATFORM=linux/amd64` for x64).
@@ -26,7 +26,10 @@ An Electron desktop app (macOS and Linux) for running parallel Claude Code sessi
 ## Working rules
 
 - **The spec is the source of truth.** Every behaviour change updates `docs/SPEC.md` and the Guide pages in the same commit; e2e covers the new behaviour.
-- **Commit only after `npm run verify` passes.** Never commit after a failing test. A commit only ever follows verify in one command, `npm run verify && git commit …`: never `;` between them, never an echo of the status in place of verify's own result, and never a background task's success read as verify's (the task can end with 0 while verify failed inside it).
+- **Commits:** never after a failing check or test.
+  - While working on a branch: run the e2e suites the change touches (`npm run build`, then `tsx --tsconfig tsconfig.node.json scripts/e2e.ts --mode prod <suite>`, production build only) before the commit; the commit follows `npm run check && git commit …` in one command.
+  - When the branch is done, before it's merged: `npm run verify` once (all suites, both builds). Fix whatever fails and run it again until it passes; the last commit follows `npm run verify && git commit …`.
+  - Never `;` between a check and the commit, never an echo of the status in place of the check's own result, and never a background task's success read as the check's (the task can end with 0 while the check failed inside it).
 - **No AI attribution** in commits or pull request descriptions: no `Co-Authored-By` trailers, no "Generated with" lines. `.claude/settings.json` turns Claude Code's own off; keep it committed.
 - **Generic only:** no company names, internal hosts, accounts or other company values in code, tests, docs or examples.
 - **Live checks** against the real Claude Code: a cheap model (`--model haiku`), scratch folders and a profile you can spare; never real work repositories.
