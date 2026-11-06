@@ -9,7 +9,7 @@
  *
  *   npm run build && npm run guide:screenshots [-- --out=<dir>] [-- --only=<name,…>]
  *
- * The window is 1280×800 at 2x; memory numbers are fixed (TEST_MEMORY), so
+ * The window is 1280×800 at 2x (1480 wide for Home's Board); memory numbers are fixed (TEST_MEMORY), so
  * only clocks ("for 2 min") change between runs. Each file is WebP, at the
  * best quality that stays under 150 KB.
  */
@@ -45,6 +45,8 @@ const only = arg('only')?.split(',');
 
 const WIDTH = 1280;
 const HEIGHT = 800;
+/** Home's Board shot is wider, so its five columns fit (scaled down like the rest). */
+const BOARD_WIDTH = 1480;
 /** The Guide's column is 660 px; images are shown at half their pixel size. */
 const MAX_PIXEL_WIDTH = 1320;
 const MAX_BYTES = 150 * 1024;
@@ -167,6 +169,10 @@ const TRANSCRIPTS: Record<string, [string, string][]> = {
   'ABC-139': [['Plan ABC-139.', 'The spec is ready for review.']],
   'ABC-147': [['Move the colors to design tokens.', 'Done, and committed.']],
   'ABC-151': [['Fix the flaky DatePicker test.', 'Freezing the clock in the test.']],
+  'ABC-136': [['Keep the focus in the search box.', 'Done: it keeps the focus after a search.']],
+  'ABC-131': [['Add pagination to the table.', 'Adding a page size picker…']],
+  'ABC-110': [['Warn before the session times out.', 'Done, and committed.']],
+  'ABC-104': [['Retry failed webhooks with backoff.', 'Done, and committed.']],
 };
 
 const TITLES: Record<string, string> = {
@@ -378,6 +384,10 @@ async function main() {
             name,
             repoPath,
             baseBranch: 'main',
+            // The PR state of the Board's merged workspaces, from a file per
+            // branch (spec §12.3); nothing for the others. In the project, so
+            // Edit profile's PR fields stay empty.
+            pr: { statusCommand: `cat "$HOME/pr/$${envVar('BRANCH')}" 2>/dev/null || true` },
           })),
           { id: 'notes', profileId: 'personal', name: 'notes', repoPath: notes, remote: null },
         ],
@@ -445,11 +455,15 @@ async function main() {
     };
     const newWorkspace = async (project: string, task: string, alsoIn: string[] = []) => {
       await openNewWorkspace(project);
-      for (const other of alsoIn) {
-        await page.eval(
-          `[...document.querySelectorAll('[data-also-in] label')].find((l) => l.textContent.includes(${JSON.stringify(other)})).querySelector('input').click()`,
-        );
-      }
+      // Exactly these: the dialog remembers a project's last choice.
+      await page.eval(`(() => {
+        const wanted = ${JSON.stringify(alsoIn)};
+        for (const label of document.querySelectorAll('[data-also-in] label')) {
+          const input = label.querySelector('input');
+          const want = wanted.some((other) => label.textContent.includes(other));
+          if (input && input.checked !== want) input.click();
+        }
+      })()`);
       await typeInField(page, '#ws-task', task, false);
       await sleep(600);
       await submitDialog(page);
@@ -654,20 +668,6 @@ async function main() {
     await sleep(800);
     await shoot('home-overview', null);
 
-    // 7b. The same workspaces on the Board, then back to the List it remembers.
-    await page.eval(`document.querySelector('[data-home-layout-option="board"]').click()`);
-    await page.waitFor(
-      `!!document.querySelector('[data-home-board] [data-board-card]')`,
-      'the Board',
-    );
-    await sleep(800);
-    await shoot('home-board', null);
-    await page.eval(`document.querySelector('[data-home-layout-option="list"]').click()`);
-    await page.waitFor(
-      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'sections'`,
-      'the List again',
-    );
-
     // 8. Edit profile.
     const openEdit = async () => {
       if (
@@ -713,6 +713,86 @@ async function main() {
     );
     await sleep(600);
     await shoot('new-workspace-lookup', { selectors: ['dialog[open]'], pad: 6 });
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'New workspace to close');
+
+    // 10. Home's Board, last: more of the morning, so every column has cards.
+    // Idle: one finished and then suspended, one interrupted with Esc.
+    await newWorkspace('web-app', 'ABC-136 Search box focus');
+    await control('ABC-136', 'working');
+    await control('ABC-136', 'stop');
+    await newWorkspace('shared-ui', 'ABC-131 Pagination');
+    await keepRunning('ABC-131');
+    await control('ABC-131', 'working');
+    await page.waitFor(`(${rowOf('ABC-131')})?.title.includes('Working')`, 'ABC-131 working');
+    await page.waitFor(
+      `(() => {
+        const input = [...document.querySelectorAll('[data-terminal][data-connected]')].find((t) => t.offsetParent)?.querySelector('.xterm-helper-textarea');
+        input?.focus();
+        return !!input && document.activeElement === input;
+      })()`,
+      'the terminal of ABC-131',
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(
+      `(${rowOf('ABC-131')})?.title.includes('Interrupted')`,
+      'ABC-131 interrupted',
+    );
+    // Merged: committed, pushed from Home, and their pull requests merged.
+    const merged = { 'ABC-110': 198, 'ABC-104': 187 };
+    for (const [id, n] of Object.entries(merged)) {
+      await newWorkspace(
+        id === 'ABC-110' ? 'web-app' : 'api-service',
+        `${id} ${id === 'ABC-110' ? 'Session timeout banner' : 'Retry failed webhooks'}`,
+      );
+      await keepRunning(id);
+      const tree = worktreeOf(id);
+      fs.writeFileSync(path.join(tree, `${id}.md`), `${id}\n`);
+      fx.git(tree, 'add', '.');
+      fx.git(tree, 'commit', '-q', '-m', `${id} ${n}`);
+      const branch = fx.git(tree, 'branch', '--show-current').trim();
+      fs.mkdirSync(path.join(home, 'pr'), { recursive: true });
+      fs.writeFileSync(
+        path.join(home, 'pr', branch),
+        JSON.stringify({ state: 'merged', url: `https://git.example.com/acme/pull/${n}` }),
+      );
+      await control(id, 'working');
+      await control(id, 'stop');
+    }
+    await pressKey(page, 'Digit0', CMD);
+    for (const id of Object.keys(merged)) {
+      const push = `[...document.querySelectorAll('[data-home-row]')].find((r) => r.title.startsWith('${id}'))?.querySelector('[data-home-action=push]')`;
+      await page.waitFor(`!!${push}`, `Push on ${id}`, 30_000);
+      await page.eval(`${push}.click()`);
+    }
+    await page.waitFor(
+      `(${rowOf('ABC-136')})?.dataset.suspended === 'true'`,
+      'ABC-136 suspended',
+      SUSPEND_MIN * MINUTE_MS + 30_000,
+    );
+    await page.eval(`document.querySelector('[data-home-layout-option="board"]').click()`);
+    const count = (column: string) =>
+      `document.querySelector('[data-board-column=${column}] [data-board-count]')?.textContent`;
+    await page.waitFor(
+      `${count('idle')} === '2' && ${count('merged')} === '2'`,
+      'every column with cards',
+      60_000,
+    );
+    await page.eval('document.activeElement?.blur()');
+    // Wide enough for all five columns at their 220 px minimum, beside the sidebar.
+    const resize = (width: number) =>
+      mainProcess.eval(
+        `process.mainModule.require('electron').BrowserWindow.getAllWindows()[0].setContentSize(${width}, ${HEIGHT})`,
+      );
+    await resize(BOARD_WIDTH);
+    await page.waitFor(
+      `(() => { const b = document.querySelector('[data-board-column=merged]').getBoundingClientRect(); return b.right <= window.innerWidth; })()`,
+      'the Merged column in view',
+    );
+    await sleep(800);
+    await shoot('home-board', null);
+    await resize(WIDTH);
+    await page.eval(`document.querySelector('[data-home-layout-option="list"]').click()`);
 
     console.log(`${shots.length} screenshots in ${out}:\n  ${shots.join('\n  ')}`);
   } catch (error) {

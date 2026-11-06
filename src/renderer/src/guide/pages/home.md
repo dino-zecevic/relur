@@ -27,7 +27,7 @@ Click a row, or press <kbd>↵</kbd> on it, to open its workspace. <kbd>↑</kbd
 
 **List | Board** at the right of Home's tabs shows the same workspaces as five columns: **Needs you**, **Working**, **Idle**, **Ready to ship** and **Merged**. The choice is remembered for each profile. A workspace is in the same place as in the List; **Idle** holds the rest: interrupted, suspended or exited, or done with nothing to ship.
 
-![Home's Board: Needs you holds a Spec review gate with a quick reply field and a permission request with Open, Working holds one workspace with its memory, Idle is empty, and Ready to ship holds two workspaces, one with a file not committed.](images/home-board.webp)
+![Home's Board: Needs you holds a Spec review gate with a quick reply field and a permission request with Open, Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged.](images/home-board.webp)
 
 Cards move between the columns by themselves as Claude works; you can't drag them from one column to another. Click a card to open its workspace. Hover over it, or give it the focus, for its main action (such as **Open**, **Approve spec** or **Push**) and **Delete**. **Delete n merged** at the top of Merged deletes all of them in one dialog. In a narrow window the Board scrolls sideways, and each column scrolls on its own.
 
