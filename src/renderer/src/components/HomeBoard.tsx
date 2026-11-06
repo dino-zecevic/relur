@@ -352,7 +352,9 @@ export function HomeBoard({
     // Needs permission shows Open in the field's place, not again below.
     const main = permission ? [] : it.buttons;
     const always = column === 'needs';
-    const reveal = always ? 'flex' : 'hidden group-hover:flex group-focus-within:flex';
+    /** Under Needs you the field is always there; elsewhere it unfolds with the actions. */
+    const unfold = (node: ReactNode) =>
+      always ? node : <Unfold shown={text !== ''}>{node}</Unfold>;
     const error = replyErrors[w.id] ?? it.error;
     return (
       // biome-ignore lint/a11y/useSemanticElements: a card holds its own buttons and field
@@ -376,6 +378,14 @@ export function HomeBoard({
         onClick={() => {
           if (!dropped.current) actions.open(w);
         }}
+        // A card focused near the column's edge stays in view once it has unfolded.
+        onTransitionEnd={(e) => {
+          if (
+            e.propertyName === 'grid-template-rows' &&
+            e.currentTarget.contains(document.activeElement)
+          )
+            e.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }}
       >
         <div className={`flex flex-col gap-[5px] ${lifted ? 'opacity-0' : ''}`}>
           <CardBody
@@ -384,43 +394,47 @@ export function HomeBoard({
             project={projectName(w.projectId)}
             suspended={suspended.has(w.id) && column !== 'idle'}
           />
-          {offer === 'field' && !lifted && !wasSent ? (
-            <div className={`relative mt-[3px] ${text ? 'flex' : reveal}`}>
-              <input
-                data-quick-reply
-                value={text}
-                placeholder={placeholder(column, w, suspended.has(w.id))}
-                aria-label={`Message Claude in ${cardLabel(w)}`}
-                disabled={send.isPending && send.variables?.workspaceId === w.id}
-                className="box-border h-7 w-full rounded-[5px] border border-line bg-term pr-7 pl-2 text-sm text-ellipsis text-fg outline-none placeholder:text-fg-subtle focus:border-focus focus:shadow-[0_0_0_1px_var(--color-focus)]"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                onFocus={refreshDrafts}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setReplies((r) => ({ ...r, [w.id]: value }));
-                }}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    sendReply(w, column);
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    (e.currentTarget.closest('[data-board-card]') as HTMLElement | null)?.focus();
-                  }
-                }}
-              />
-              <span
-                title="Send ↵"
-                className={`pointer-events-none absolute top-[5px] right-[5px] box-border flex h-[18px] min-w-[18px] items-center justify-center rounded-[3px] border border-line font-mono text-xs ${
-                  text.trim() ? 'bg-raised text-fg' : 'text-fg-subtle'
-                }`}
-              >
-                ↵
-              </span>
-            </div>
-          ) : null}
+          {offer === 'field' && !lifted && !wasSent
+            ? unfold(
+                <div className="relative mt-[3px] flex">
+                  <input
+                    data-quick-reply
+                    value={text}
+                    placeholder={placeholder(column, w, suspended.has(w.id))}
+                    aria-label={`Message Claude in ${cardLabel(w)}`}
+                    disabled={send.isPending && send.variables?.workspaceId === w.id}
+                    className="box-border h-7 w-full rounded-[5px] border border-line bg-term pr-7 pl-2 text-sm text-ellipsis text-fg outline-none placeholder:text-fg-subtle focus:border-focus focus:shadow-[0_0_0_1px_var(--color-focus)]"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onFocus={refreshDrafts}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setReplies((r) => ({ ...r, [w.id]: value }));
+                    }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        sendReply(w, column);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        (
+                          e.currentTarget.closest('[data-board-card]') as HTMLElement | null
+                        )?.focus();
+                      }
+                    }}
+                  />
+                  <span
+                    title="Send ↵"
+                    className={`pointer-events-none absolute top-[5px] right-[5px] box-border flex h-[18px] min-w-[18px] items-center justify-center rounded-[3px] border border-line font-mono text-xs ${
+                      text.trim() ? 'bg-raised text-fg' : 'text-fg-subtle'
+                    }`}
+                  >
+                    ↵
+                  </span>
+                </div>,
+              )
+            : null}
           {offer === 'open' && !lifted ? (
             <div
               data-quick-reply-open
@@ -438,20 +452,22 @@ export function HomeBoard({
               <span className="min-w-0 truncate">Answer it in the Claude tab</span>
             </div>
           ) : null}
-          {offer === 'draft' && !lifted ? (
-            <button
-              type="button"
-              data-quick-reply-draft
-              className={`mt-[3px] h-7 items-center self-start rounded-[5px] text-sm text-fg-muted underline-offset-2 hover:text-fg hover:underline outline-none focus-visible:shadow-[0_0_0_2px_var(--color-raised),0_0_0_3.5px_var(--color-focus)] ${always ? 'flex' : reveal}`}
-              title="Its Claude tab has text you typed and didn't send"
-              onClick={(e) => {
-                e.stopPropagation();
-                actions.open(w);
-              }}
-            >
-              {QUICK_REPLY_REFUSAL.draft}
-            </button>
-          ) : null}
+          {offer === 'draft' && !lifted
+            ? unfold(
+                <button
+                  type="button"
+                  data-quick-reply-draft
+                  className="mt-[3px] flex h-7 items-center self-start rounded-[5px] text-sm text-fg-muted underline-offset-2 hover:text-fg hover:underline outline-none focus-visible:shadow-[0_0_0_2px_var(--color-raised),0_0_0_3.5px_var(--color-focus)]"
+                  title="Its Claude tab has text you typed and didn't send"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    actions.open(w);
+                  }}
+                >
+                  {QUICK_REPLY_REFUSAL.draft}
+                </button>,
+              )
+            : null}
           {wasSent && !lifted ? (
             <div
               data-quick-reply-sent
@@ -467,22 +483,24 @@ export function HomeBoard({
             </span>
           ) : null}
           {!drag ? (
-            <div className="mt-0.5 hidden items-center gap-1.5 border-t border-line pt-[7px] group-focus-within:flex group-hover:flex">
-              {main}
-              <span className="flex-1" />
-              <button
-                type="button"
-                data-home-action="delete"
-                title="Delete workspace…"
-                className="flex h-6 items-center rounded-[5px] px-[7px] text-sm text-fg-subtle outline-none hover:bg-band-strong hover:text-st-error focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  actions.delete(w);
-                }}
-              >
-                Delete
-              </button>
-            </div>
+            <Unfold>
+              <div className="mt-0.5 flex items-center gap-1.5 border-t border-line pt-[7px]">
+                {main}
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  data-home-action="delete"
+                  title="Delete workspace…"
+                  className="flex h-6 items-center rounded-[5px] px-[7px] text-sm text-fg-subtle outline-none hover:bg-band-strong hover:text-st-error focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    actions.delete(w);
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </Unfold>
           ) : null}
         </div>
       </div>
@@ -535,7 +553,7 @@ export function HomeBoard({
                   </button>
                 ) : null}
               </div>
-              <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2">
+              <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2 contain-content">
                 {list.map((w) => card(column, w))}
                 {list.length === 0 ? (
                   <div className="rounded-[7px] border border-dashed border-line px-2 py-[22px] text-center text-sm text-fg-subtle">
@@ -596,6 +614,35 @@ export function HomeBoard({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * What a card shows on hover or focus (spec §6.7, components.md Board): the
+ * quick reply off Needs you and the actions. It unfolds over 180 ms, ease-out,
+ * after the pointer rests 150 ms (a pointer passing over doesn't start it;
+ * focus starts it at once), and folds back when both leave. Its grid row grows
+ * from 0fr to 1fr, so the cards below move with it. Reduced motion: no delay,
+ * no transition (theme.css). `shown` keeps it open (a field holding text).
+ */
+function Unfold({ shown = false, children }: { shown?: boolean; children: ReactNode }) {
+  return (
+    <div
+      data-board-unfold
+      // -5px takes back the card's gap: folded, it takes no room.
+      // Focus and text show it at once (a transition's start is still hidden, and
+      // the field must take focus), so only folding and hover transition visibility.
+      className={`-mt-[5px] grid duration-[180ms] ease-out ${
+        shown
+          ? 'visible grid-rows-[1fr] transition-[grid-template-rows]'
+          : 'invisible grid-rows-[0fr] transition-[grid-template-rows,visibility] group-focus-within:visible group-focus-within:grid-rows-[1fr] group-focus-within:transition-[grid-template-rows] group-hover:visible group-hover:grid-rows-[1fr] motion-safe:[.group:hover:not(:focus-within)_&]:delay-150'
+      }`}
+    >
+      {/* Clipped only vertically, so focus rings show at the sides. */}
+      <div className="min-h-0 overflow-x-visible overflow-y-clip">
+        <div className="flex flex-col gap-[5px] pt-[5px]">{children}</div>
+      </div>
     </div>
   );
 }

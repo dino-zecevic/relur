@@ -3,7 +3,9 @@
  * its memory per profile (also across a restart), the five columns following
  * the workspaces live, drag to delete (Esc, a drop elsewhere, the zone, the
  * dialog's Cancel and Delete), the keyboard (↑↓←→, ↵, Tab, Delete), Delete n
- * merged, and the quick reply: sent to a waiting workspace and to a working
+ * merged, a card unfolding on hover (after a rest, smoothly, none while the
+ * pointer passes over, at once with reduced motion), and the quick reply: sent
+ * to a waiting workspace and to a working
  * one, resumed first for a suspended one, refused on a permission request
  * (Open instead) and over a draft. Runs with a throwaway HOME and a fake
  * `claude`.
@@ -438,7 +440,7 @@ exec sleep 600
     // Focus shows the card's actions; Tab reaches them.
     assert.equal(
       await page.eval(
-        `getComputedStyle(${card(id('working'))}.querySelector('[data-home-action=delete]')).display !== 'none'`,
+        `getComputedStyle(${card(id('working'))}.querySelector('[data-home-action=delete]')).visibility === 'visible'`,
       ),
       true,
       'actions on focus',
@@ -464,6 +466,72 @@ exec sleep 600
     await page.waitFor(`!document.querySelector('[data-home-board]')`, 'the workspace by ↵');
     await pressKey(page, 'Digit0', CMD);
     await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
+
+    // 6b. Hover unfolds a card's field and actions once the pointer rests, as a
+    // transition, and the card below moves down with it (spec §6.7).
+    await page.eval(`document.querySelector('[data-home-board]').focus()`);
+    await page.eval(`(() => {
+      window.__unfolds = [];
+      // Started, not merely created: one cancelled in its delay never starts.
+      document.addEventListener('transitionstart', (e) => {
+        if (e.propertyName === 'grid-template-rows') window.__unfolds.push(e.target.closest('[data-board-card]').dataset.boardCard);
+      });
+    })()`);
+    const unfolds = () => page.eval<string[]>(`window.__unfolds.splice(0)`);
+    const parts = (cardId: string) =>
+      `[...${card(cardId)}.querySelectorAll('[data-board-unfold]')]`;
+    const unfolded = (cardId: string) =>
+      `${parts(cardId)}.every((u) => getComputedStyle(u).visibility === 'visible' && u.getBoundingClientRect().height > 20)`;
+    const folded = (cardId: string) =>
+      `${parts(cardId)}.every((u) => getComputedStyle(u).visibility === 'hidden' && u.getBoundingClientRect().height === 0)`;
+    const top = (cardId: string) =>
+      page.eval<number>(`${card(cardId)}.getBoundingClientRect().top`);
+    const [upper = '', lower = ''] = await page.eval<string[]>(columnIds('idle'));
+    assert.ok(upper && lower, 'two Idle cards');
+    const away = await centre(page, `document.querySelector('[data-board-column=idle] h2')`);
+    await mouse(page, 'mouseMoved', away.x, away.y);
+    await page.waitFor(folded(upper), 'the Idle card folded');
+    const lowerTop = await top(lower);
+    let at = await centre(page, card(upper));
+    await mouse(page, 'mouseMoved', at.x, at.y);
+    assert.deepEqual(
+      await page.eval(
+        `${parts(upper)}.map((u) => [getComputedStyle(u).transitionDelay, getComputedStyle(u).transitionDuration])`,
+      ),
+      [
+        ['0.15s', '0.18s'],
+        ['0.15s', '0.18s'],
+      ],
+      'unfolds after 150 ms, over 180 ms',
+    );
+    await page.waitFor(unfolded(upper), 'the card unfolded on hover');
+    assert.ok((await top(lower)) >= lowerTop + 40, 'the card below moved down');
+    assert.ok((await unfolds()).includes(upper), 'unfolded as a transition');
+    await mouse(page, 'mouseMoved', away.x, away.y);
+    await page.waitFor(folded(upper), 'the card folded again');
+    assert.equal(await top(lower), lowerTop, 'the card below back');
+    assert.ok((await unfolds()).includes(upper), 'folded as a transition');
+    // A pointer passing over several cards unfolds none of them.
+    const passed = await page.eval<string[]>(
+      `[...document.querySelectorAll('[data-board-column=merged] [data-board-card], [data-board-column=idle] [data-board-card]')].map((c) => c.dataset.boardCard)`,
+    );
+    const sweep = await Promise.all(passed.map((cardId) => centre(page, card(cardId))));
+    for (const p of sweep) await mouse(page, 'mouseMoved', p.x, p.y);
+    await mouse(page, 'mouseMoved', away.x, away.y);
+    await sleep(500);
+    assert.deepEqual(await unfolds(), [], 'nothing unfolded in passing');
+    for (const cardId of passed) assert.ok(await page.eval(folded(cardId)), `${cardId} folded`);
+    // Reduced motion: no delay and no transition; it shows and hides at once.
+    await page.send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+    });
+    at = await centre(page, card(upper));
+    await mouse(page, 'mouseMoved', at.x, at.y);
+    assert.ok(await page.eval(unfolded(upper)), 'unfolded at once');
+    await mouse(page, 'mouseMoved', away.x, away.y);
+    assert.ok(await page.eval(folded(upper)), 'folded at once');
+    assert.deepEqual(await unfolds(), [], 'no transition with reduced motion');
+    await page.send('Emulation.setEmulatedMedia', { features: [] });
 
     // 7. Delete n merged: one dialog for both.
     await page.eval(

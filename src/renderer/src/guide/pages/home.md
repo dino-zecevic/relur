@@ -37,7 +37,7 @@ Drag a card and **Drop to delete** appears along the bottom. Drop it there to op
 
 ### Quick reply
 
-A card has a field to send Claude a message without opening the workspace: under Needs you it is always there, elsewhere it shows when you hover over the card or give it the focus. <kbd>↵</kbd> sends it, as if you had typed it in the Claude tab; a [suspended](suspend) Claude resumes first. While Claude works, it reads the message after its current step.
+A card has a field to send Claude a message without opening the workspace: under Needs you it is always there, elsewhere the card unfolds to show it, with its buttons, when the pointer rests on it or you give it the focus, and folds back when you leave unless you've typed into it. <kbd>↵</kbd> sends it, as if you had typed it in the Claude tab; a [suspended](suspend) Claude resumes first. While Claude works, it reads the message after its current step.
 
 There is no field where a message could answer something by accident:
 
