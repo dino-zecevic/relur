@@ -4,14 +4,27 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-06
+
+### Highlights
+
+Home has a new **Board**, now the view Home opens with: your workspaces in five columns, **Working**, **Idle**, **Needs you**, **Ready to ship** and **Merged**, and the cards move between them by themselves as Claude works. Answer a waiting session with a **quick reply** right on its card, without opening it, and drag a card to **Drop to delete** to remove its workspace. The List is still one click away, under **List | Board**.
+
 ### Added
 
-- **Board** on Home: **List | Board** at the right of Home's tabs shows the profile's workspaces as five columns, **Needs you**, **Working**, **Idle**, **Ready to ship** and **Merged**, by the same rules as the List, remembered per profile. Cards move by themselves as Claude works and show their main action and **Delete** on hover and focus; **Delete n merged** sits at the top of Merged. Drag a card to **Drop to delete** at the bottom to open Delete workspace, where you confirm. Arrow keys move between cards and columns, <kbd>↵</kbd> opens, <kbd>Delete</kbd> or <kbd>⌫</kbd> deletes.
+- **Board** on Home: **List | Board** at the right of Home's tabs shows the profile's workspaces as five columns, **Working**, **Idle**, **Needs you**, **Ready to ship** and **Merged**, by the same rules as the List. Cards move by themselves as Claude works; on hover or focus a card unfolds its main action and **Delete**. While Needs you has cards, its count takes the color of the most urgent one (a permission request, else a question), as in the sidebar. **Delete n merged** sits at the top of Merged. Drag a card to **Drop to delete** at the bottom to open Delete workspace, where you confirm. Arrow keys move between cards and columns, <kbd>↵</kbd> opens, <kbd>Delete</kbd> or <kbd>⌫</kbd> deletes.
 - **Quick reply** on the Board's cards: type a message and press ↵ to send it to that workspace's Claude without opening it; a suspended Claude resumes first. It is never offered on a permission request (Open instead), over a prompt you typed and didn't send, or on Merged workspaces.
+- The Guide shows the Board in a screenshot and covers the quick reply, notification clicks and updating inside the app.
 
 ### Changed
 
-- **Merged locally counts as merged:** a workspace whose branch is already in its base branch, on your machine or on the remote (merged, fast-forwarded or rebased onto it), counts as merged, also without a pull request. Delete workspace no longer warns that its commits aren't pushed and says **Merged into main**, or **Merged into your local main (not pushed yet)**; Home shows it under Clean up and in the Board's Merged column, and **Delete n merged** includes it.
+- Home opens on the **Board** in profiles that never chose a view; a profile where you picked List or Board keeps it.
+- **Merged locally counts as merged:** a workspace whose branch is already in its base branch, on your machine or on the remote (merged, fast-forwarded or rebased onto it), counts as merged, also without a pull request. Delete workspace no longer warns that its commits aren't pushed and says **Merged into main**, or **Merged into your local main (not pushed yet)**; Home shows it under **Clean up** and in the Board's **Merged** column, and **Delete n merged** includes it. A new workspace with no commits of its own never counts as merged; squash merges still count through the pull request.
+- The **Responses** panel starts with every entry collapsed, the newest one too, and new entries arrive collapsed. **Expand all** and **Collapse all** are there whenever there is an entry, a single one too.
+
+### Fixed
+
+- The Guide's Linux page no longer says Relur never updates itself: **Update** replaces the AppImage.
 
 ## [0.4.3] - 2026-11-06
 
@@ -145,7 +158,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/relur-dev/relur/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/relur-dev/relur/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/relur-dev/relur/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/relur-dev/relur/compare/v0.4.0...v0.4.1
