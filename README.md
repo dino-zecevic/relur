@@ -24,7 +24,7 @@ Claude Code is great at one task at a time. Run three, and you're juggling termi
 - **Know when Claude needs you.** Working, needs permission, waiting or done: in the sidebar, the Dock badge and a notification.
 - **Review and ship.** See the diff, then commit, push and open a pull request, without leaving the app.
 - **Work and personal, apart.** Profiles keep separate Claude accounts, settings and projects.
-- **The real Claude Code.** The official `claude`, unmodified, in a terminal you can see. Runs locally, no telemetry; the only request of its own is an opt-in daily check for new versions.
+- **The real Claude Code.** The official `claude`, unmodified, in a terminal you can see. Runs locally, no telemetry; its only requests of its own are an opt-in daily check for new versions, and the download when you click Update.
 
 ## Install
 
@@ -66,7 +66,7 @@ Relur is signed ad hoc, not with an Apple Developer ID. A `.dmg` downloaded with
 
 <br>
 
-Relur can tell you when a new version is out: on its first start it asks whether to check GitHub once a day (**Check for Updates Automatically** in the app menu changes it later). **Update** in its notice opens your terminal with the install command, which asks before it quits Relur. To update by hand, run the install command again; for the `.deb`, install the new one with `apt`. To uninstall, use `sh -s -- --uninstall` at its end. Your settings stay in `~/Library/Application Support/Relur` (Linux: `~/.config/relur`) until you delete them; Claude logins, repositories and worktrees are never touched.
+Relur can tell you when a new version is out: on its first start it asks whether to check GitHub once a day (**Check for Updates Automatically** in the app menu changes it later). **Update** in its notice downloads the new version from the release, checks it against the release's `SHA256SUMS`, and then offers **Restart now** or **Later** (installed when you next quit). It replaces Relur where it is, in `/Applications`, `~/Applications` or your AppImage's folder, never with `sudo`; if that fails, the old version stays and Relur says why. **Update in terminal** runs the install command in your terminal instead. To update by hand, run the install command again; for the `.deb`, install the new one with `apt`. To uninstall, use `sh -s -- --uninstall` at its end. Your settings stay in `~/Library/Application Support/Relur` (Linux: `~/.config/relur`) until you delete them; Claude logins, repositories and worktrees are never touched.
 
 </details>
 
@@ -139,7 +139,7 @@ It *is* `claude` in a terminal, unmodified. Relur adds what's around it: a workt
 
 <br>
 
-Not through Relur. It runs locally, with no telemetry, analytics or accounts, and stores no credentials. Its only request of its own is the check for new versions, if you allow it: once a day it asks GitHub's API for Relur's latest release, without cookies or identifiers, sending nothing about you or your work. Your code reaches Anthropic the way it always does with Claude Code, and your git host when you push.
+Not through Relur. It runs locally, with no telemetry, analytics or accounts, and stores no credentials. Its only requests of its own are the check for new versions, if you allow it: once a day it asks GitHub's API for Relur's latest release, without cookies or identifiers, sending nothing about you or your work; and, when you click **Update**, the download of the new version and its checksums from that release. Your code reaches Anthropic the way it always does with Claude Code, and your git host when you push.
 
 </details>
 

@@ -53,8 +53,10 @@ import { SuspendDefaultNotice } from './suspend/notice';
 import { SuspendService } from './suspend/service';
 import { serveTrpcOverIpc } from './trpc/electron';
 import { UnfinishedService } from './unfinished/service';
-import { startUpdate } from './updates/install';
+import { startUpdate, updateWay } from './updates/install';
+import { UpdateInstaller } from './updates/installer';
 import { skippedStore, UpdateService } from './updates/service';
+import { updateRoot } from './updates/stage';
 import {
   bringForward,
   createMainWindow,
@@ -143,6 +145,8 @@ let statusPlatform: ElectronStatusPlatform | null = null;
 let memory: MemoryMonitor | null = null;
 /** Suspends idle Claude sessions and resumes them when shown (spec §9.8). */
 let suspender: SuspendService | null = null;
+/** Updating inside the app (spec §15.7); told when the quit question is cancelled. */
+let updateInstaller: UpdateInstaller | null = null;
 /** The quit dialog in the window (spec §5): asked with the busy session ids. */
 const quitAsker = new EventEmitter();
 let answerQuit: ((quit: boolean) => void) | null = null;
@@ -416,6 +420,39 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       },
       feedback,
     );
+    // Updating inside the app (spec §15.7): where it runs decides how it updates.
+    const testTarget = process.env[envVar('UPDATE_TARGET')] || undefined;
+    const installer = new UpdateInstaller({
+      dataDir,
+      version: app.getVersion(),
+      way: updateWay({
+        platform: process.platform,
+        arch: process.arch,
+        translated: app.runningUnderARM64Translation,
+        packaged: app.isPackaged,
+        exePath: process.execPath,
+        appImage: process.env.APPIMAGE,
+        testTarget,
+        writable: (dir) => {
+          try {
+            fs.accessSync(dir, fs.constants.W_OK);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+      }),
+      helper,
+      allowHttp: Boolean(process.env[envVar('UPDATE_URL')]),
+      quit: () => app.quit(),
+      // The started app gets the user's login environment, not this one's.
+      launchEnv: async () => (await env.login()).env,
+      launch: process.platform === 'darwin' && !testTarget ? 'open' : 'exec',
+      pid: process.pid,
+    });
+    updateInstaller = installer;
+    // At the last moment of a normal quit, never at a signal's or logout (spec §15.7).
+    atShutdown(() => installer.applyAtQuit({ normalQuit: askBeforeQuit && !sessionEnding }));
     const workspaceRecords = new WorkspaceRecords(db);
     // Workspace states from hooks (spec §10), their alerts and the Dock badge.
     statusPlatform = new ElectronStatusPlatform(config);
@@ -680,8 +717,9 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       unfinished: continuing,
       updates: {
         service: updates,
+        installer,
         // The terminal gets the user's login environment, not the app's (AppImage paths included).
-        update: async (release) =>
+        inTerminal: async (release) =>
           startUpdate(release, {
             platform: process.platform,
             arch: process.arch,
@@ -689,6 +727,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
             packaged: app.isPackaged,
             env: (await env.login()).env,
             terminal: process.env[envVar('UPDATE_TERMINAL')],
+            commandDir: updateRoot(dataDir),
           }),
       },
       closeNotice: {
@@ -743,6 +782,8 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
   // remembered preferences go to disk first, before anything else: at logout
   // every process of the app is signalled at once, and the app may not get far.
   let askBeforeQuit = true;
+  /** The desktop session ends (logout, shutdown): a staged update waits (spec §15.7). */
+  let sessionEnding = false;
   const quitBySignal = () => {
     saveWindowState();
     askBeforeQuit = false;
@@ -755,7 +796,10 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     process.on('SIGTERM', quitBySignal);
     process.removeAllListeners('SIGHUP');
     process.on('SIGHUP', quitBySignal);
-    powerMonitor.on('shutdown', saveWindowState);
+    powerMonitor.on('shutdown', () => {
+      sessionEnding = true;
+      saveWindowState();
+    });
   });
   app.on('before-quit', (event) => {
     if (stopped || host.runningCount() === 0) {
@@ -787,7 +831,10 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
           asking = false;
           answerQuit = null;
         });
-        if (!quit) return;
+        if (!quit) {
+          updateInstaller?.quitCancelled();
+          return;
+        }
       } else if (busy > 0 && askBeforeQuit) {
         asking = true;
         const sessions = plural(busy, 'running session');
@@ -809,7 +856,10 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
         ).finally(() => {
           asking = false;
         });
-        if (response !== 0) return;
+        if (response !== 0) {
+          updateInstaller?.quitCancelled();
+          return;
+        }
       }
       if (status) status.quitting = true;
       // What Claude was doing, before it stops (spec §9.7).

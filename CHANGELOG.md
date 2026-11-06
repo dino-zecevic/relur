@@ -4,6 +4,15 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **Update** in the update notice now updates Relur inside the app, without a terminal: it downloads the new version for your Mac or your AppImage from the release, with a progress bar and **Cancel**, checks it against the release's `SHA256SUMS` and that it is Relur at that version, and then offers **Restart now** or **Later** (installed when you next quit). Relur is replaced where it is installed, in `/Applications`, `~/Applications` or your AppImage's folder, never with `sudo`; if that fails, the old version stays, opens again and says why. Nothing is downloaded before you click Update.
+
+### Changed
+
+- **Update in terminal** in the update notice keeps the old way, the install command in your terminal. On macOS it now opens in the terminal you made the default for `.command` files, such as iTerm2, instead of always Terminal.
+- A `.deb` install keeps showing the `apt` command; a Relur built from source says it can't update itself; a Relur running from the disk image or from a folder you can't write to offers Update in terminal and says why.
+
 ## [0.4.2] - 2026-11-06
 
 ### Added

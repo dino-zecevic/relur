@@ -52,6 +52,13 @@ within 300 "${as_user[@]}" xvfb-run -a "$installed" --appimage-extract-and-run -
 step "its window's class matches the desktop entry (StartupWMClass=$exe), and renderers are sandboxed"
 within 300 "${as_user[@]}" bash /check/window.sh "$installed" "$exe"
 
+step "Update finds the AppImage's id and version, as it checks a download (spec §15.7)"
+version=$(dpkg-deb -f "$deb" Version)
+helper=/home/ubuntu/.config/$cli/helper/$cli-helper
+identity=$(cd /tmp && within 60 "${as_user[@]}" "$helper" identity appimage "$installed")
+echo "$identity"
+[ "$identity" = "$exe $version" ] || { echo "FAILED: expected \"$exe $version\"" >&2; exit 1; }
+
 step "install.sh --uninstall keeps the settings"
 within 120 "${as_user[@]}" sh /check/install.sh --uninstall --yes
 test ! -e "$installed" && test ! -e "$desktop" && test ! -e "/home/ubuntu/.local/bin/$cli"

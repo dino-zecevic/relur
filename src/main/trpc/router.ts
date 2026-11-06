@@ -47,6 +47,7 @@ import type { SuspendDefaultNotice } from '../suspend/notice';
 import type { SuspendService } from '../suspend/service';
 import type { UnfinishedService } from '../unfinished/service';
 import type { UpdateAction } from '../updates/install';
+import type { UpdateInstaller } from '../updates/installer';
 import type { UpdateService } from '../updates/service';
 import { windowStateChanged } from '../window';
 import type { WorkflowSetupService } from '../workflow/propose';
@@ -90,8 +91,15 @@ export interface Services {
   helper: string | null;
   /** Continuing interrupted work (spec §9.7). */
   unfinished: UnfinishedService;
-  /** New versions (spec §15.7): the service, and Update for this installation. */
-  updates: { service: UpdateService; update: (release: Release) => Promise<UpdateAction> };
+  /**
+   * New versions (spec §15.7): the service, updating inside the app, and
+   * Update in terminal for this installation.
+   */
+  updates: {
+    service: UpdateService;
+    installer: UpdateInstaller;
+    inTerminal: (release: Release) => Promise<UpdateAction>;
+  };
   /** The quit dialog: requests with busy session ids, and the user's answer. */
   quit: { asker: EventEmitter; answer: (quit: boolean) => void };
   /** The notice when the window first closes and the app keeps running (spec §5). */
@@ -1090,10 +1098,20 @@ export function createAppRouter({
 
     /** New versions (spec §15.7). */
     updates: router({
-      /** The first-start question and the notice. */
-      state: publicProcedure.query(() => updates.service.state()),
+      /** The first-start question and the notice, with updating inside the app. */
+      state: publicProcedure.query(() => ({
+        ...updates.service.state(),
+        ...updates.installer.view(),
+      })),
       changes: publicProcedure.subscription(({ signal }) =>
-        fromListener((listener) => updates.service.onChange(() => listener(true)), signal),
+        fromListener((listener) => {
+          const offService = updates.service.onChange(() => listener(true));
+          const offInstaller = updates.installer.onChange(() => listener(true));
+          return () => {
+            offService();
+            offInstaller();
+          };
+        }, signal),
       ),
       /** Check for updates or No thanks. */
       answer: publicProcedure
@@ -1101,11 +1119,25 @@ export function createAppRouter({
         .mutation(({ input }) => updates.service.answer(input.check)),
       skip: publicProcedure.mutation(() => updates.service.skip()),
       dismiss: publicProcedure.mutation(() => updates.service.dismiss()),
-      /** Opens the user's terminal with the install command, or says what to run. */
-      update: publicProcedure.mutation(() => {
+      /** Update: downloads, checks and stages the offered version; progress comes through changes. */
+      install: publicProcedure.mutation(() => {
         const release = updates.service.state().available;
         if (!release) throw new Error('There is no newer version to install');
-        return updates.update(release);
+        void updates.installer.install(release);
+      }),
+      cancel: publicProcedure.mutation(() => updates.installer.cancel()),
+      later: publicProcedure.mutation(() => updates.installer.later()),
+      restart: publicProcedure.mutation(() => updates.installer.restart()),
+      dismissFailure: publicProcedure.mutation(() => updates.installer.dismissFailure()),
+      /** Update in terminal: opens the user's terminal with the install command, or says what to run. */
+      inTerminal: publicProcedure.mutation(() => {
+        // After a failed replacement the notice offers it without a check having run.
+        const failed = updates.installer.view().failure;
+        const release =
+          updates.service.state().available ??
+          (failed ? { version: failed.version, url: '', assets: {} } : null);
+        if (!release) throw new Error('There is no newer version to install');
+        return updates.inTerminal(release);
       }),
     }),
 
