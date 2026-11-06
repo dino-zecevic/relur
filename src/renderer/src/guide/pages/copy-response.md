@@ -21,7 +21,7 @@ While it works, Claude often writes a few lines, runs tools, then writes more. T
 
 ## Expanding and collapsing
 
-Each entry is a block with a header line: its number, your prompt, the time Claude last wrote in it, and **Copy**. The newest entry is shown in full; older ones are collapsed to their first lines, fading out. Click a header, or press <kbd>↵</kbd> on it, to expand or collapse that entry; clicking a collapsed entry's text expands it too. With more than one entry, **Expand all** and **Collapse all** at the top do it for every entry. **Copy** is in the header, so it copies the whole entry even while it's collapsed.
+Each entry is a block with a header line: its number, your prompt, the time Claude last wrote in it, and **Copy**. Every entry starts collapsed to its first lines, fading out, the newest one too. Click a header, or press <kbd>↵</kbd> on it, to expand or collapse that entry; clicking a collapsed entry's text expands it too. **Expand all** and **Collapse all** at the top do it for every entry, even when there is only one. **Copy** is in the header, so it copies the whole entry even while it's collapsed.
 
 ## Size
 

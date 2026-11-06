@@ -5,6 +5,7 @@ import {
   type MouseEvent,
   memo,
   type PointerEvent,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -306,16 +307,12 @@ export function ResponsesPanel({
   );
   const list = responses.data ?? [];
   const newest = list.length;
-  // The newest response is expanded, older ones collapsed, unless toggled.
+  // Every response is collapsed, the newest too, unless toggled (spec §6.8).
   const [toggled, setToggled] = useState<Record<number, boolean>>({});
-  const isExpanded = (number: number) => toggled[number] ?? number === newest;
-  const toggle = useMemo(
-    () => (number: number) =>
-      setToggled((current) => ({
-        ...current,
-        [number]: !(current[number] ?? number === newest),
-      })),
-    [newest],
+  const isExpanded = (number: number) => toggled[number] ?? false;
+  const toggle = useCallback(
+    (number: number) => setToggled((current) => ({ ...current, [number]: !current[number] })),
+    [],
   );
   const setAll = (expanded: boolean) =>
     setToggled(Object.fromEntries(list.map((r) => [r.index + 1, expanded])));
@@ -414,7 +411,7 @@ export function ResponsesPanel({
           {responses.data ? list.length : ''}
         </span>
         <span className="flex-1" />
-        {list.length > 1 ? (
+        {list.length > 0 ? (
           <>
             <button type="button" className={button('ghost', 'sm')} onClick={() => setAll(true)}>
               Expand all

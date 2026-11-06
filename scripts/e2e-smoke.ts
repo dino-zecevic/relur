@@ -847,9 +847,15 @@ exec sleep 600
     const first = await page.eval<string>(
       `${responsesPanel}.querySelector('[data-response="1"]').innerText`,
     );
-    assert.match(first, /^▾\n1\n› Fix the login\n.+\nCopy\n+Answer one\.$/, JSON.stringify(first));
+    assert.match(first, /^▸\n1\n› Fix the login\n.+\nCopy\n+Answer one\.$/, JSON.stringify(first));
     await page.eval(`${responsesPanel}.querySelector('[data-response-copy]').click()`);
     await mainProcess.waitFor('globalThis.__copied.length === 3', 'the panel copy');
+    // One entry: Expand all and Collapse all are there too (spec §6.8).
+    const onlyEntry = `${responsesPanel}.querySelector('[data-response="1"]').dataset.expanded`;
+    await clickButtonText(page, 'Expand all', responsesPanel);
+    await page.waitFor(`${onlyEntry} === 'true'`, 'Expand all with one entry');
+    await clickButtonText(page, 'Collapse all', responsesPanel);
+    await page.waitFor(`${onlyEntry} === 'false'`, 'Collapse all with one entry');
     // It follows the transcript: a new response shows without reopening.
     await typeInTerminal(page, 'unseen');
     await page.waitFor(`${panelResponses} === 2`, 'the new response in the panel');
@@ -859,19 +865,23 @@ exec sleep 600
       'Answer **one**.',
       'Quiet **two**.',
     ]);
-    // Blocks: the newest expanded, the older one collapsed, Copy working while collapsed.
+    // Blocks: all collapsed, the newest too (spec §6.8), Copy working while collapsed.
     const expanded = `[...${responsesPanel}.querySelectorAll('[data-response]')].map((r) => r.dataset.expanded).join()`;
-    await page.waitFor(`${expanded} === 'false,true'`, 'the newest expanded, the older collapsed');
+    await page.waitFor(`${expanded} === 'false,false'`, 'every entry collapsed');
     await page.eval(
       `${responsesPanel}.querySelector('[data-response="1"] [data-response-copy]').click()`,
     );
     await mainProcess.waitFor('globalThis.__copied.length === 5', 'Copy while collapsed');
     assert.equal((await mainProcess.eval<string[]>('globalThis.__copied'))[4], 'Answer **one**.');
-    assert.equal(await page.eval<string>(expanded), 'false,true', 'Copy leaves it collapsed');
+    assert.equal(await page.eval<string>(expanded), 'false,false', 'Copy leaves it collapsed');
     await page.eval(
       `${responsesPanel}.querySelector('[data-response="1"] [data-response-header]').click()`,
     );
-    await page.waitFor(`${expanded} === 'true,true'`, 'a click on the header expands');
+    await page.waitFor(`${expanded} === 'true,false'`, 'a click on the header expands');
+    await page.eval(
+      `${responsesPanel}.querySelector('[data-response="2"] [data-response-header]').click()`,
+    );
+    await page.waitFor(`${expanded} === 'true,true'`, 'the newest expands too');
     // ↵ on a header toggles it.
     await page.eval(
       `${responsesPanel}.querySelector('[data-response="2"] [data-response-header]').focus()`,
@@ -983,8 +993,8 @@ exec sleep 600
       await page.eval<string | null>(
         `${responsesPanel}.querySelector('[data-response="3"] [data-response-body]').getAttribute('title')`,
       ),
-      null,
-      'nothing to scroll to',
+      'Expand',
+      'nothing to scroll to: a click only expands it',
     );
     await page.eval(
       `${responsesPanel}.querySelector('[data-response="3"] [data-response-copy]').click()`,
@@ -1036,6 +1046,14 @@ exec sleep 600
       false,
       'nothing to copy',
     );
+    // Collapsed, the newest too: Copy last part shows once it's expanded.
+    assert.equal(await page.eval<string>(`${entry(5)}.dataset.expanded`), 'false');
+    assert.equal(
+      await page.eval<boolean>(`!!${entry(5)}.querySelector('[data-response-copy-last]')`),
+      false,
+    );
+    await page.eval(`${entry(5)}.querySelector('[data-response-header]').click()`);
+    await page.waitFor(`!!${entry(5)}.querySelector('[data-response-copy-last]')`, 'expanded');
     const copiedBefore = await mainProcess.eval<number>('globalThis.__copied.length');
     await page.eval(`${entry(5)}.querySelector('[data-response-copy]').click()`);
     await mainProcess.waitFor(`globalThis.__copied.length === ${copiedBefore + 1}`, 'Copy');

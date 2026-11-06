@@ -612,6 +612,10 @@ async function main() {
       `document.querySelectorAll('[data-responses-panel] [data-response]').length === 3`,
       'the Responses panel',
     );
+    // Entries open collapsed (spec §6.8): the newest is expanded for the picture.
+    await page.eval(
+      `[...document.querySelectorAll('[data-responses-panel] [data-response-header]')].at(-1).click()`,
+    );
     await sleep(800);
     await shoot('responses-panel', null);
     await pressKey(page, 'KeyR', CMD | MOD.shift);
