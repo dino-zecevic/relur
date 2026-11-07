@@ -5,8 +5,11 @@ import type { Workspace } from '@shared/workspaces';
 import type { HookMessage } from '../bridge/server';
 import { endsWithDeniedPermission, isBackgroundHandBack } from '../claude/transcript';
 import type { WorkspaceRecords } from '../db/workspaces';
+import { descendants, type ProcessTree, processTree } from '../memory/measure';
+import type { ProcessEntry } from '../memory/processes';
 import type { SessionHost } from '../sessions/host';
-import { type Transition, transition } from './transitions';
+import { checkHold, HOLD_MINUTES, type Hold, runsCommand, startHold } from './hold';
+import { type Transition, transition, waitedCommands } from './transitions';
 
 /** States that alert: a notification and a sound (spec §10.3). */
 const ALERT_STATES: readonly WorkspaceState[] = [
@@ -68,12 +71,16 @@ const REREAD_EVENTS = ['Stop', 'PostToolUse'];
 /** When the transcript is checked for a denied permission after an answer (ms). */
 export const ANSWER_CHECKS_MS = [1000, 3000];
 
-/**
- * How long Done is held for background commands at most (spec §10.2): then
- * it is Done with "n still running in the background", for a command that
- * never ends, such as a server not recognised as one.
- */
-export const HOLD_DONE_MS = 10 * 60_000;
+/** A minute, in ms: the hold's times are counted in it (spec §10.2); test runs shorten it. */
+export const MINUTE_MS = 60_000;
+
+/** How the status service watches held commands; replaced in tests. */
+export interface HoldOptions {
+  /** The length of a minute for the hold's times (spec §10.2). */
+  minuteMs?: number;
+  /** The machine's process table; without it no process is ever found. */
+  readProcesses?: () => Promise<ProcessEntry[]>;
+}
 
 /**
  * Whether keys typed while Claude asks for permission answer it: Enter picks
@@ -110,8 +117,14 @@ export class StatusService {
    */
   private readonly waiting = new Set<string>();
 
-  /** The fallback of each workspace whose Done is held for background commands (spec §10.2). */
-  private readonly holds = new Map<string, NodeJS.Timeout>();
+  /** Each workspace whose Done is held for background commands (spec §10.2). */
+  private readonly holds = new Map<string, Hold>();
+  /** Looks at the process table while any Done is held. */
+  private holdTimer: NodeJS.Timeout | null = null;
+  /** A look at the process table is under way. */
+  private readingProcesses = false;
+  private readonly minuteMs: number;
+  private readonly readProcesses: (() => Promise<ProcessEntry[]>) | null;
 
   /** Workspaces whose permission prompt was answered, until the next hook event. */
   private readonly answered = new Map<string, NodeJS.Timeout[]>();
@@ -121,8 +134,10 @@ export class StatusService {
     private readonly host: SessionHost,
     private readonly platform: StatusPlatform,
     private readonly answerChecksMs: readonly number[] = ANSWER_CHECKS_MS,
-    private readonly holdDoneMs = HOLD_DONE_MS,
+    holdOptions: HoldOptions = {},
   ) {
+    this.minuteMs = holdOptions.minuteMs ?? MINUTE_MS;
+    this.readProcesses = holdOptions.readProcesses ?? null;
     host.onSpawn((info) => {
       if (info.kind !== 'claude' || !info.workspaceId) return;
       records.setClaudeRunning(info.workspaceId, true);
@@ -212,7 +227,7 @@ export class StatusService {
       this.clearHold(workspace.id);
     }
     if (message.event === 'Stop' && next.state === 'working') this.waiting.add(workspace.id);
-    if (next.held) this.hold(workspace.id);
+    if (next.held) this.hold(workspace.id, waitedCommands(message.payload));
     this.settle(workspace, next);
   }
 
@@ -238,24 +253,67 @@ export class StatusService {
 
   /**
    * Done held for background commands (spec §10.2): a hand-back ends the hold
-   * and Claude takes another turn; without one, the fallback makes it Done
-   * with the commands still counted.
+   * and Claude takes another turn. Without one, Done comes, with the commands
+   * still counted, once each command's process, found below Claude, has been
+   * gone for the grace; for one never found, after the fixed fallback; for
+   * all, at the cap.
    */
-  private hold(workspaceId: string): void {
-    const timer = setTimeout(() => {
-      this.holds.delete(workspaceId);
-      this.waiting.delete(workspaceId);
-      const workspace = this.records.get(workspaceId);
-      // While the app quits, states stay as quitting marked them (spec §9.7).
-      if (this.quitting || workspace?.state !== 'working') return;
-      this.settle(workspace, { state: 'done', message: null, background: workspace.background });
-    }, this.holdDoneMs);
-    this.holds.set(workspaceId, timer);
+  private hold(workspaceId: string, commands: string[]): void {
+    this.holds.set(workspaceId, startHold(commands, Date.now()));
+    if (!this.holdTimer) {
+      this.holdTimer = setInterval(() => this.checkHolds(), HOLD_MINUTES.poll * this.minuteMs);
+    }
+    this.checkHolds();
   }
 
   private clearHold(workspaceId: string): void {
-    clearTimeout(this.holds.get(workspaceId));
     this.holds.delete(workspaceId);
+    if (this.holds.size === 0 && this.holdTimer) {
+      clearInterval(this.holdTimer);
+      this.holdTimer = null;
+    }
+  }
+
+  /**
+   * Reads the process table once for every held Done. While a read is still
+   * under way (a slow `ps`), only the times are checked.
+   */
+  private checkHolds(): void {
+    if (!this.readProcesses || this.readingProcesses) {
+      this.settleHolds(null);
+      return;
+    }
+    this.readingProcesses = true;
+    this.readProcesses()
+      .then(processTree, () => null)
+      .then((tree) => {
+        this.readingProcesses = false;
+        this.settleHolds(tree);
+      });
+  }
+
+  private settleHolds(tree: ProcessTree | null): void {
+    const now = Date.now();
+    const pids = new Map(this.host.processes('claude').map((p) => [p.info.workspaceId, p.pid]));
+    for (const [workspaceId, hold] of [...this.holds]) {
+      const pid = pids.get(workspaceId);
+      const below =
+        tree && pid !== undefined && tree.byPid.has(pid) ? descendants(tree, pid) : null;
+      const running = below
+        ? (command: string) => below.some((p) => runsCommand(p, command))
+        : null;
+      const checked = checkHold(hold, now, running, this.minuteMs);
+      if (!checked.done) {
+        this.holds.set(workspaceId, checked.hold);
+        continue;
+      }
+      this.clearHold(workspaceId);
+      this.waiting.delete(workspaceId);
+      const workspace = this.records.get(workspaceId);
+      // While the app quits, states stay as quitting marked them (spec §9.7).
+      if (this.quitting || workspace?.state !== 'working') continue;
+      this.settle(workspace, { state: 'done', message: null, background: workspace.background });
+    }
   }
 
   /**

@@ -220,14 +220,16 @@ async function checkHyperlink(page: Cdp, main: Cdp, home: string) {
 
 const profileVar = envVar('PROFILE');
 
-/** The fallback of Done held for background commands (spec §10.2), shortened for the test. */
-const HOLD_DONE_MS = 8000;
+/** The minute of Done held for background commands (spec §10.2), shortened for the test. */
+const MINUTE_MS = 800;
+/** The hold's fixed fallback, for a command whose process is never found: 10 minutes. */
+const HOLD_DONE_MS = 10 * MINUTE_MS;
 
 async function main() {
   const fx = createFixture();
   const appEnv = () => ({
     ...withDisplayEnv(fx.env),
-    [envVar('TEST_HOLD_DONE_MS')]: String(HOLD_DONE_MS),
+    [envVar('TEST_MINUTE_MS')]: String(MINUTE_MS),
   });
   let app: RunningApp | undefined;
   try {
@@ -326,6 +328,8 @@ while IFS= read -r line; do
       hook UserPromptSubmit '{"prompt":"<task-notification><task-id>b1</task-id><status>completed</status></task-notification>"}'
       printf '\\342\\217\\272 The command finished.\\n\\n'
       printf '%s\\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The command finished."}]},"timestamp":"2026-10-28T12:02:00Z"}' >> "$HOME/transcript-$n.jsonl" ;;
+    # A background command below Claude, as Claude Code runs one: its command line in a shell's arguments.
+    bg\\ *) sh -c "\${line#bg }" > /dev/null 2>&1 & ;;
     # Any hook with its payload: \`hook <event> <json>\` (background work, spec §10.2).
     hook\\ *) rest="\${line#hook }"; hook "\${rest%% *}" "\${rest#* }" ;;
     usage) [ -n "$helper" ] && printf '%s' '{"rate_limits":{"five_hour":{"used_percentage":34,"resets_at":4102444800},"seven_day":{"used_percentage":81}}}' | "$helper" statusline > /dev/null ;;
@@ -1162,8 +1166,8 @@ exec sleep 600
       'Fix login timeout · 1 still running in the background',
     );
     await screenshot(page, screenshotDir, '7f-background-command.png');
-    // Any other command holds Done, Working with the count; one that never
-    // hands back is Done with a note at the fallback (shortened for the test).
+    // Any other command holds Done, Working with the count; one whose process
+    // isn't found is Done with a note at the fixed fallback (shortened for the test).
     await typeInTerminal(page, 'prompt');
     await typeInTerminal(page, `hook Stop ${tasks(['b2', 'shell', './watch-forever.sh'])}`);
     await page.waitFor(`${background} === '1 in background'`, 'Done held');
@@ -1179,6 +1183,47 @@ exec sleep 600
       'Fix login timeout · 1 still running in the background',
     );
     await page.waitFor(`/1 running$/.test(${background})`, 'Done with 1 running, at the fallback');
+    // One whose process runs below Claude is held for as long as it lives,
+    // past the fallback, and Done once it has handed back.
+    const long = 'sleep 30 && echo long-done';
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, `bg ${long}`);
+    await typeInTerminal(page, `hook Stop ${tasks(['b4', 'shell', long])}`);
+    await page.waitFor(`${background} === '1 in background'`, 'held for the long command');
+    await sleep(HOLD_DONE_MS + 3 * MINUTE_MS);
+    assert.equal(
+      await page.eval(`!!${row}.querySelector('[aria-label=Working]')`),
+      true,
+      'Working past the fallback while it runs',
+    );
+    assert.equal((await notifications()).length, sent + 3, 'no Done while it runs');
+    await typeInTerminal(page, 'handback');
+    await typeInTerminal(page, `hook Stop ${tasks()}`);
+    await page.waitFor(
+      `${background} === null && !${row}.querySelector('[aria-label=Working]')`,
+      'Done after the hand-back',
+    );
+    await mainProcess.waitFor(`globalThis.__notifications.length === ${sent + 4}`, 'one Done');
+    assert.equal((await notifications()).at(-1)?.body, 'Fix login timeout');
+    // One that ends without handing back: Done with the note 2 minutes after
+    // it's gone, before the fallback.
+    const short = 'sleep 2 && echo short-done';
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, `bg ${short}`);
+    const heldAt = Date.now();
+    await typeInTerminal(page, `hook Stop ${tasks(['b5', 'shell', short])}`);
+    await page.waitFor(`${background} === '1 in background'`, 'held for the short command');
+    await mainProcess.waitFor(
+      `globalThis.__notifications.length === ${sent + 5}`,
+      'Done the grace after it ended',
+      HOLD_DONE_MS,
+    );
+    assert.ok(Date.now() - heldAt < HOLD_DONE_MS, 'before the fallback');
+    assert.equal(
+      (await notifications()).at(-1)?.body,
+      'Fix login timeout · 1 still running in the background',
+    );
+    await page.waitFor(`/1 running$/.test(${background})`, 'Done with 1 running, after the grace');
     // A command Claude waits for: no Done until it hands back and Claude's
     // turn after it ends, then one.
     await typeInTerminal(page, 'prompt');
@@ -1189,16 +1234,16 @@ exec sleep 600
       `!!${row}.querySelector('[aria-label=Working]')`,
       'Working after the hand-back',
     );
-    assert.equal((await notifications()).length, sent + 3, 'no Done before the last Stop');
+    assert.equal((await notifications()).length, sent + 5, 'no Done before the last Stop');
     await typeInTerminal(page, `hook Stop ${tasks()}`);
     await page.waitFor(
       `${background} === null && !${row}.querySelector('[aria-label=Working]')`,
       'Done without a note',
     );
-    await mainProcess.waitFor(`globalThis.__notifications.length === ${sent + 4}`, 'one Done');
+    await mainProcess.waitFor(`globalThis.__notifications.length === ${sent + 6}`, 'one Done');
     assert.equal((await notifications()).at(-1)?.body, 'Fix login timeout');
     // The hand-backs got no prompt marker; the panel labels the turn after one.
-    await page.waitFor(`${promptTotal} === ${promptsBefore + 4}`, 'four typed prompts counted');
+    await page.waitFor(`${promptTotal} === ${promptsBefore + 6}`, 'six typed prompts counted');
     await pressKey(page, 'KeyR', CMD | MOD.shift);
     await page.waitFor(
       `[...document.querySelectorAll('[data-responses-panel] [data-response]')].at(-1)?.innerText.includes('The command finished.')`,

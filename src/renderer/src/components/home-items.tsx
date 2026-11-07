@@ -113,7 +113,12 @@ export function Action({
 export const Sep = () => <span className="flex-none text-fg-subtle">·</span>;
 
 /** The detail line's parts after the project. */
-export type Part = { text: string; tone?: 'perm' | 'input' | 'appr' | 'strong' | 'cmd' };
+export type Part = {
+  text: string;
+  tone?: 'perm' | 'input' | 'appr' | 'strong' | 'cmd' | 'quiet';
+  /** A tooltip for the part. */
+  title?: string;
+};
 
 export const TONE: Record<NonNullable<Part['tone']>, string> = {
   perm: 'flex-none font-medium text-st-permission',
@@ -121,7 +126,17 @@ export const TONE: Record<NonNullable<Part['tone']>, string> = {
   appr: 'flex-none font-medium text-st-approval',
   strong: 'flex-none font-medium text-fg',
   cmd: 'min-w-0 truncate font-mono text-[11.5px] text-fg-muted',
+  quiet: 'flex-none text-fg-subtle',
 };
+
+/**
+ * Done with commands Claude left running, such as a dev server (spec §10.2):
+ * a quiet "n running" that keeps the workspace where it is; null otherwise.
+ */
+export function runningMark(w: Pick<Workspace, 'state' | 'background'>): Part | null {
+  const note = w.state === 'done' ? backgroundNote(w.state, w.background) : null;
+  return note ? { text: `${w.background} running`, tone: 'quiet', title: note } : null;
+}
 
 /** What a row (List) or card (Board) shows for a workspace in a section. */
 export interface HomeItem {
@@ -419,6 +434,9 @@ export function useHomeItems({
         );
       }
     }
+    // Ready to ship and Clean up keep a Done workspace whose dev server still runs.
+    const mark = section === 'ship' || section === 'clean' ? runningMark(w) : null;
+    if (mark) parts.push(mark);
     return {
       glyph,
       parts,

@@ -72,6 +72,12 @@ const isAgent = (task: BackgroundTask) => task.type === 'subagent';
 export const waitedFor = (task: BackgroundTask) =>
   isAgent(task) || !looksLikeDevServer(task.command);
 
+/** The commands a held Done waits for (spec §10.2): the waited-for ones of a `Stop`. */
+export const waitedCommands = (payload: unknown): string[] =>
+  runningBackgroundTasks(payload)
+    .filter((t) => !isAgent(t) && waitedFor(t))
+    .map((t) => t.command);
+
 /**
  * The state a hook event moves a workspace to (spec §10.2), or null for none.
  * SessionStart changes nothing: Starting is set when Claude is spawned.

@@ -456,15 +456,13 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     const workspaceRecords = new WorkspaceRecords(db);
     // Workspace states from hooks (spec §10), their alerts and the Dock badge.
     statusPlatform = new ElectronStatusPlatform(config);
-    // Scripted test runs shorten the fallback of Done held for background commands (spec §10.2).
-    const holdDoneMs = Number(process.env[envVar('TEST_HOLD_DONE_MS')]);
-    status = new StatusService(
-      workspaceRecords,
-      host,
-      statusPlatform,
-      undefined,
-      testWindows() && holdDoneMs > 0 ? holdDoneMs : undefined,
-    );
+    // Done held for background commands watches their processes (spec §10.2);
+    // scripted test runs shorten its minute.
+    const minuteMs = Number(process.env[envVar('TEST_MINUTE_MS')]);
+    status = new StatusService(workspaceRecords, host, statusPlatform, undefined, {
+      minuteMs: testWindows() && minuteMs > 0 ? minuteMs : undefined,
+      readProcesses: () => readProcessTable(),
+    });
     bridge.onHook((message) => status?.handleHook(message));
     // Plan usage from the status line (spec §11).
     const usage = new UsageRecords(db);

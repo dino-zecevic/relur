@@ -135,7 +135,9 @@ export function HomeOverview({
               // The project, then the parts; Needs you's run on after one separator.
               <span key={p.text} className="contents">
                 {i === 0 || dotted ? <Sep /> : null}
-                <span className={p.tone ? TONE[p.tone] : 'min-w-0 truncate'}>{p.text}</span>
+                <span className={p.tone ? TONE[p.tone] : 'min-w-0 truncate'} title={p.title}>
+                  {p.text}
+                </span>
               </span>
             ))}
           </div>

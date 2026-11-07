@@ -4,6 +4,11 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+
+- A workspace whose Claude waits for a long command in the background, such as a 20-minute test run, stays **Working** for as long as the command runs, instead of turning **Done** after 10 minutes and moving to **Ready to ship** while Claude still waits. Relur watches the command's process: once it has ended and Claude hasn't carried on within 2 minutes, the workspace is Done with "1 still running in the background", as before; a command whose process it can't find still gets 10 minutes, and nothing is held longer than 2 hours.
+- On Home, a done workspace whose dev server still runs keeps its place and shows a quiet **1 running**, on the Board and in the List.
+
 ## [0.5.0] - 2026-11-06
 
 ### Highlights

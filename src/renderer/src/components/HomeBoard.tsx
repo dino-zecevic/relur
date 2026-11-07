@@ -24,6 +24,8 @@ import {
   Action,
   type HomeActions,
   type HomeItem,
+  type Part,
+  runningMark,
   Sep,
   TONE,
   useHomeItems,
@@ -325,7 +327,9 @@ export function HomeBoard({
   /** What a card shows: its List section's item, or Idle's own. */
   const cardItem = (column: BoardColumn, w: Workspace): HomeItem => {
     if (column !== 'idle') return item(SECTION_OF[column], w, true);
-    const background = backgroundNote(w.state, w.background);
+    // Done keeps its quiet mark for a dev server (spec §10.2); other states their note.
+    const note = backgroundNote(w.state, w.background);
+    const background: Part | null = runningMark(w) ?? (note ? { text: note } : null);
     const text = suspended.has(w.id)
       ? 'Suspended'
       : w.state === 'error' && w.stateMessage
@@ -333,7 +337,7 @@ export function HomeBoard({
         : STATE_LABEL[w.state];
     return {
       glyph: workspaceGlyph(w, launching.has(w.id)) ?? 'exited',
-      parts: [{ text }, ...(background ? [{ text: background }] : [])],
+      parts: [{ text }, ...(background ? [background] : [])],
       dotted: true,
       buttons: [
         <Action
@@ -723,7 +727,7 @@ function CardBody({
               {i > 0 && it.dotted ? <Sep /> : null}
               <span
                 data-suspended={p.text === 'Suspended' || undefined}
-                title={p.text === 'Suspended' ? SUSPENDED_TOOLTIP : undefined}
+                title={p.text === 'Suspended' ? SUSPENDED_TOOLTIP : p.title}
                 className={p.tone ? TONE[p.tone] : 'min-w-0 flex-none truncate last:shrink'}
               >
                 {p.text}

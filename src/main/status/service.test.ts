@@ -5,8 +5,13 @@ import type { Workspace } from '@shared/workspaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openStateDb } from '../db/state-db';
 import { WorkspaceRecords } from '../db/workspaces';
+import type { ProcessEntry } from '../memory/processes';
 import { SessionHost } from '../sessions/host';
-import { type Alert, HOLD_DONE_MS, StatusService } from './service';
+import { HOLD_MINUTES } from './hold';
+import { type Alert, MINUTE_MS, StatusService } from './service';
+
+/** The hold's fixed fallback, for a command whose process is never found (spec §10.2). */
+const HOLD_DONE_MS = HOLD_MINUTES.fallback * MINUTE_MS;
 
 const workspace: Omit<Workspace, 'repos'> = {
   id: 'ws_1',
@@ -320,6 +325,123 @@ describe('StatusService', () => {
       vi.advanceTimersByTime(HOLD_DONE_MS);
       expect(state()).toBe('exited');
       expect(notified.map((a) => a.state)).toEqual(['needs-permission']);
+    });
+
+    describe('with the processes below Claude', () => {
+      const CLAUDE_PID = 100;
+      let table: ProcessEntry[];
+      const entry = (pid: number, ppid: number, args: string): ProcessEntry => ({
+        pid,
+        ppid,
+        rss: 0,
+        name: args.split(' ')[0] ?? '',
+        args,
+      });
+      /** Claude, and a background shell for each command, as Claude Code starts them. */
+      const running = (...commands: string[]) => {
+        table = [
+          entry(CLAUDE_PID, 1, 'claude'),
+          ...commands.map((c, i) =>
+            entry(200 + i, CLAUDE_PID, `/bin/zsh -c eval '${c}' < /dev/null`),
+          ),
+        ];
+      };
+      const stop = (...commands: string[]) =>
+        hook('Stop', {
+          background_tasks: commands.map((command, i) => ({
+            id: `b${i}`,
+            type: 'shell',
+            status: 'running',
+            command,
+          })),
+        });
+      const reads = { count: 0 };
+      beforeEach(() => {
+        table = [];
+        reads.count = 0;
+        vi.spyOn(host, 'processes').mockReturnValue([
+          { info: { workspaceId: 'ws_1' } as never, pid: CLAUDE_PID },
+        ]);
+        status = new StatusService(
+          records,
+          host,
+          {
+            claudeTabInFocus: () => visible,
+            quiet: () => quiet,
+            profileName: () => 'Work',
+            notify: (a) => notified.push(a),
+            setBadge: () => {},
+          },
+          [50],
+          {
+            readProcesses: async () => {
+              reads.count++;
+              return table;
+            },
+          },
+        );
+      });
+      const minutes = (n: number) => vi.advanceTimersByTimeAsync(n * MINUTE_MS);
+
+      it('stays Working past the old 10 minutes while the process lives, then Done after the hand-back', async () => {
+        running('./scripts/linux-check.sh');
+        hook('UserPromptSubmit');
+        stop('./scripts/linux-check.sh');
+        await minutes(25);
+        expect(records.get('ws_1')).toMatchObject({ state: 'working', background: 1 });
+        expect(notified).toEqual([]);
+        running();
+        hook('UserPromptSubmit', handBack);
+        hook('Stop', {});
+        expect(summary()).toEqual([['done', 'Fix login']]);
+        // The hold is over: the process table isn't read any more.
+        const after = reads.count;
+        await minutes(5);
+        expect(reads.count).toBe(after);
+      });
+
+      it('is Done with a note 2 minutes after the process is gone, without a hand-back', async () => {
+        running('make test');
+        hook('UserPromptSubmit');
+        stop('make test');
+        await minutes(3);
+        // Seen gone at the next look (every quarter minute), Done the grace after it.
+        running();
+        await minutes(HOLD_MINUTES.grace);
+        expect(state()).toBe('working');
+        await minutes(HOLD_MINUTES.poll);
+        expect(records.get('ws_1')).toMatchObject({ state: 'done', background: 1 });
+        expect(summary()).toEqual([['done', 'Fix login · 1 still running in the background']]);
+      });
+
+      it('keeps the old 10 minutes when the process is never found', async () => {
+        running('something else');
+        hook('UserPromptSubmit');
+        stop('./watch-forever.sh');
+        await minutes(HOLD_MINUTES.fallback - 0.25);
+        expect(state()).toBe('working');
+        await minutes(0.25);
+        expect(records.get('ws_1')).toMatchObject({ state: 'done', background: 1 });
+      });
+
+      it('is Done at the 2-hour cap with the process still alive', async () => {
+        running('tail -f build.log');
+        hook('UserPromptSubmit');
+        stop('tail -f build.log');
+        await minutes(HOLD_MINUTES.cap - 0.25);
+        expect(state()).toBe('working');
+        await minutes(0.25);
+        expect(summary()).toEqual([['done', 'Fix login · 1 still running in the background']]);
+      });
+
+      it('is Done at once with a dev server, without looking for it', async () => {
+        running('npm run dev');
+        hook('UserPromptSubmit');
+        stop('npm run dev');
+        expect(records.get('ws_1')).toMatchObject({ state: 'done', background: 1 });
+        await minutes(1);
+        expect(reads.count).toBe(0);
+      });
     });
 
     it("holds Done when a Stop lists only the agents' own commands (checked live)", () => {

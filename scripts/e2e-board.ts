@@ -147,6 +147,16 @@ while IFS= read -r line; do
     permission) hook Notification '{"message":"Claude needs your permission to use Bash"}' ;;
     input) hook Notification '{"notification_type":"idle_prompt","message":"Claude is waiting for your input"}' ;;
     stop) hook Stop '{"last_assistant_message":"Done."}' ;;
+    # Background work (spec §10.2): a command Claude waits for, running below it
+    # as Claude Code runs one, its hand-back, and a dev server left running.
+    held)
+      sh -c 'sleep 600 && echo built' > /dev/null 2>&1 & bg=$!
+      hook Stop '{"background_tasks":[{"id":"b1","type":"shell","status":"running","command":"sleep 600 && echo built"}]}' ;;
+    handback)
+      [ -n "$bg" ] && { pkill -P "$bg"; kill "$bg"; } 2>/dev/null
+      hook UserPromptSubmit '{"prompt":"<task-notification><task-id>b1</task-id></task-notification>"}'
+      hook Stop '{"background_tasks":[]}' ;;
+    devserver) hook Stop '{"background_tasks":[{"id":"d1","type":"shell","status":"running","command":"npm run dev"}]}' ;;
     *) printf '%s\\n' "$line" >> "$HOME/input-$id.txt" ;;
   esac
 done
@@ -418,6 +428,36 @@ exec sleep 600
     );
     await reply('waiting', 'stop');
     await page.waitFor(`${columnOf(id('waiting'))} === 'idle'`, 'the card in Idle');
+    // Claude waiting for a background command it runs stays Working (spec §10.2)…
+    const status = (key: string) =>
+      `${card(id(key))}.querySelector('[data-board-status]').innerText`;
+    await reply('waiting', 'held');
+    await page.waitFor(`${columnOf(id('waiting'))} === 'working'`, 'held in Working');
+    await page.waitFor(`${status('waiting')}.includes('1 in background')`, '1 in background');
+    // …until the command hands back.
+    await page.waitFor(
+      `!${card(id('waiting'))}.querySelector('[data-quick-reply-sent]')`,
+      'the field back',
+      5_000,
+    );
+    await reply('waiting', 'handback');
+    await page.waitFor(`${columnOf(id('waiting'))} === 'idle'`, 'back in Idle');
+    assert.doesNotMatch(await page.eval<string>(status('waiting')), /running|background/);
+    // A dev server left running keeps a Done card in its column, with a quiet mark.
+    await page.waitFor(
+      `!${card(id('waiting'))}.querySelector('[data-quick-reply-sent]')`,
+      'the field back',
+      5_000,
+    );
+    await reply('waiting', 'devserver');
+    await page.waitFor(`${status('waiting')}.includes('1 running')`, 'the running mark');
+    assert.equal(await page.eval(columnOf(id('waiting'))), 'idle');
+    assert.equal(
+      await page.eval(
+        `[...${card(id('waiting'))}.querySelectorAll('[data-board-status] span')].find((s) => s.textContent === '1 running')?.title`,
+      ),
+      '1 still running in the background',
+    );
     assert.deepEqual(await page.eval(columnIds('needs')), [id('perm')]);
     // The permission request answered in its terminal: Working, then Needs you again.
     await page.eval(`${card(id('perm'))}.click()`);
