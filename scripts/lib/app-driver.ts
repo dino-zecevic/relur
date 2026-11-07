@@ -211,6 +211,9 @@ export async function launchApp(options: {
     '--disable-renderer-backgrounding',
     '--disable-background-timer-throttling',
     '--disable-backgrounding-occluded-windows',
+    // Linux: X gives a window off every screen (the test window's place) a
+    // vsync of one frame a second; input and transitions wait for frames.
+    ...(process.platform === 'linux' ? ['--disable-frame-rate-limit'] : []),
   ];
   // E2E_VISIBLE=1 shows test windows normally, for debugging the tests themselves.
   const visible = options.visible || process.env.E2E_VISIBLE === '1';

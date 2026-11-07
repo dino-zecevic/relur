@@ -487,7 +487,9 @@ exec sleep 600
     await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
 
     // 6b. Hover unfolds a card's field and actions once the pointer rests, as a
-    // transition, and the card below moves down with it (spec §6.7).
+    // transition, and the card below moves down with it (spec §6.7). That it is
+    // a transition is read from the computed style, not from transitions
+    // starting, which depends on how often the test window draws.
     await page.eval(`document.querySelector('[data-home-board]').focus()`);
     await page.eval(`(() => {
       window.__unfolds = [];
@@ -503,6 +505,10 @@ exec sleep 600
       `${parts(cardId)}.every((u) => getComputedStyle(u).visibility === 'visible' && u.getBoundingClientRect().height > 20)`;
     const folded = (cardId: string) =>
       `${parts(cardId)}.every((u) => getComputedStyle(u).visibility === 'hidden' && u.getBoundingClientRect().height === 0)`;
+    const transition = (cardId: string) =>
+      page.eval<string[][]>(
+        `${parts(cardId)}.map((u) => { const s = getComputedStyle(u); return [s.transitionProperty, s.transitionDuration, s.transitionDelay]; })`,
+      );
     const top = (cardId: string) =>
       page.eval<number>(`${card(cardId)}.getBoundingClientRect().top`);
     const [upper = '', lower = ''] = await page.eval<string[]>(columnIds('idle'));
@@ -525,12 +531,30 @@ exec sleep 600
     );
     await page.waitFor(unfolded(upper), 'the card unfolded on hover');
     assert.ok((await top(lower)) >= lowerTop + 40, 'the card below moved down');
-    assert.ok((await unfolds()).includes(upper), 'unfolded as a transition');
+    assert.ok(
+      (await transition(upper)).every(
+        ([property = '', duration]) =>
+          property.split(', ').includes('grid-template-rows') && duration === '0.18s',
+      ),
+      'unfolded as a transition',
+    );
     await mouse(page, 'mouseMoved', away.x, away.y);
     await page.waitFor(folded(upper), 'the card folded again');
     assert.equal(await top(lower), lowerTop, 'the card below back');
-    assert.ok((await unfolds()).includes(upper), 'folded as a transition');
+    assert.deepEqual(
+      (await transition(upper)).map(([property = '', duration, delay]) => [
+        property.split(', ').includes('grid-template-rows'),
+        duration,
+        delay,
+      ]),
+      [
+        [true, '0.18s', '0s'],
+        [true, '0.18s', '0s'],
+      ],
+      'folded as a transition',
+    );
     // A pointer passing over several cards unfolds none of them.
+    await unfolds();
     const passed = await page.eval<string[]>(
       `[...document.querySelectorAll('[data-board-column=merged] [data-board-card], [data-board-column=idle] [data-board-card]')].map((c) => c.dataset.boardCard)`,
     );

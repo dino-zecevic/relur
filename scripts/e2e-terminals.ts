@@ -238,8 +238,13 @@ exec sleep 600
     await setSize(1600, 1000);
     await page.waitFor(`(${shownJs}).repaints > ${before}`, 'a repaint after the resize');
     before = await repaints();
+    // The other theme than the one shown: Linux under Xvfb starts light.
+    const other =
+      (await page.eval<string>('document.documentElement.dataset.theme')) === 'light'
+        ? 'dark'
+        : 'light';
     await mainProcess.eval(
-      `process.mainModule.require('electron').nativeTheme.themeSource = 'light'`,
+      `process.mainModule.require('electron').nativeTheme.themeSource = '${other}'`,
     );
     await page.waitFor(`(${shownJs}).repaints > ${before}`, 'a repaint after the theme change');
     await mainProcess.eval(
