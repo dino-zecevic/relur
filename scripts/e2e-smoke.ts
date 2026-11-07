@@ -260,7 +260,9 @@ case "$1" in
     exit 0 ;;
 esac
 n=$(ls "$HOME" | grep -c '^claude-run-')
-{ echo "$PWD"; echo "$${profileVar}"; echo "$${envVar('BRANCH')}"; printf '%s\\n' "$@"; } > "$HOME/claude-run-$n.txt"
+# Written in several steps, so it's renamed into place: the test never reads half of it.
+{ echo "$PWD"; echo "$${profileVar}"; echo "$${envVar('BRANCH')}"; printf '%s\\n' "$@"; } > "$HOME/.claude-run-$n.tmp"
+mv "$HOME/.claude-run-$n.tmp" "$HOME/claude-run-$n.txt"
 # Like Claude, it runs the hooks of its --settings file: SessionStart now, and
 # a hook per line typed into its terminal (prompt, permission, stop).
 settings=""; sid="fake-$n"; prev=""
@@ -1758,8 +1760,9 @@ exec sleep 600
       page,
       `${cli} add ~/cli-repo > ~/cli-1.txt 2>&1; echo "exit $?" >> ~/cli-1.txt`,
     );
+    // The output and the exit status are written one after the other: wait for both.
     assert.match(
-      await waitForFile(path.join(fx.root, 'cli-1.txt')),
+      await waitForFile(path.join(fx.root, 'cli-1.txt'), { until: /^exit \d+$/m }),
       /^Added cli-repo to personal: ~\/cli-repo \(base main\)\nexit 0$/,
     );
     await page.waitFor(
@@ -1772,7 +1775,7 @@ exec sleep 600
       `${cli} add ~/cli-other --profile work > ~/cli-2.txt 2>&1; echo "exit $?" >> ~/cli-2.txt`,
     );
     assert.match(
-      await waitForFile(path.join(fx.root, 'cli-2.txt')),
+      await waitForFile(path.join(fx.root, 'cli-2.txt'), { until: /^exit \d+$/m }),
       /personal profile[^\n]*\nexit 1$/,
     );
 
@@ -2419,11 +2422,13 @@ exec sleep 600
     const message = `document.querySelector('[aria-label="Commit message"]').value`;
     assert.equal(await page.eval(message), 'PROJ-7: Add cart');
     await clickButtonText(page, 'Ask Claude to write it');
-    const asked = await waitForFile(path.join(fx.root, 'claude-input-8.txt'));
-    assert.match(
-      asked,
-      /Commit the uncommitted changes in this worktree.*Start the subject line with "PROJ-7: "/,
-    );
+    // Claude's input file grows a line at a time: wait for the line the check needs.
+    const commitAsk =
+      /Commit the uncommitted changes in this worktree.*Start the subject line with "PROJ-7: "/;
+    const asked = await waitForFile(path.join(fx.root, 'claude-input-8.txt'), {
+      until: commitAsk,
+    });
+    assert.match(asked, commitAsk);
     await clickButtonText(page, 'Commit 2 files');
     await page.waitFor(`${panelText}.includes('Committed · 2')`, 'the commit');
     assert.equal(fx.git(shopTree, 'log', '-1', '--format=%s').trim(), 'PROJ-7: Add cart');
@@ -2528,8 +2533,11 @@ exec sleep 600
     // Each section has its own message editor; Ask Claude names that repository only.
     await page.waitFor(hasButton('Ask Claude to write it', section('cartapi')), 'Ask Claude');
     await clickButtonText(page, 'Ask Claude to write it', section('cartapi'));
-    const askedLinked = await waitForFile(path.join(fx.root, 'claude-input-9.txt'));
-    assert.match(askedLinked, new RegExp(`cartapi repository only, whose worktree is ${apiTree}`));
+    const linkedAsk = new RegExp(`cartapi repository only, whose worktree is ${apiTree}`);
+    const askedLinked = await waitForFile(path.join(fx.root, 'claude-input-9.txt'), {
+      until: linkedAsk,
+    });
+    assert.match(askedLinked, linkedAsk);
     assert.doesNotMatch(askedLinked, /shop/);
     await screenshot(page, screenshotDir, '14a-linked-changes.png');
     for (const id of ['shop', 'cartapi']) {
@@ -2690,7 +2698,9 @@ exec sleep 600
     );
     await focusTerminal();
     await typeInTerminal(page, 'link cartweb');
-    const linkOutput = await waitForFile(path.join(fx.root, 'claude-link-11.txt'));
+    const linkOutput = await waitForFile(path.join(fx.root, 'claude-link-11.txt'), {
+      until: /^exit \d+$/m,
+    });
     assert.match(linkOutput, new RegExp(`^Linked cartweb: ${webTree}$`, 'm'));
     assert.match(linkOutput, /^exit 0$/m);
     assert.equal(fx.git(webTree, 'branch', '--show-current').trim(), 'PROJ-8-linked-cart');
@@ -3363,8 +3373,9 @@ exec sleep 600
     );
     await screenshot(page, screenshotDir, '14e-workflow-gate.png');
     await page.eval(`document.querySelector('[data-answer]').click()`);
-    const typed = await waitForFile(path.join(fx.root, 'claude-input-11.txt'));
-    assert.match(typed, /I approve the spec of PROJ-8\./);
+    const approval = /I approve the spec of PROJ-8\./;
+    const typed = await waitForFile(path.join(fx.root, 'claude-input-11.txt'), { until: approval });
+    assert.match(typed, approval);
     // At a step, Continue while Claude is idle.
     specFile('building');
     await page.waitFor(

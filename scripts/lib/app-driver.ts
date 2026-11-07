@@ -427,15 +427,28 @@ export async function reloadPage(page: Cdp): Promise<void> {
   );
 }
 
-export async function waitForFile(file: string, timeoutMs = 10_000): Promise<string> {
+/**
+ * Waits for a file to have content, and returns it trimmed. A file written in
+ * several steps (a command's output, then its exit status) can be read between
+ * them: `until` waits until its trimmed text matches.
+ */
+export async function waitForFile(
+  file: string,
+  { until, timeoutMs = 10_000 }: { until?: RegExp; timeoutMs?: number } = {},
+): Promise<string> {
+  let text = '';
   for (const end = Date.now() + timeoutMs; Date.now() < end; ) {
     if (fs.existsSync(file)) {
-      const text = fs.readFileSync(file, 'utf8');
-      if (text) return text.trim();
+      text = fs.readFileSync(file, 'utf8').trim();
+      if (text && (!until || until.test(text))) return text;
     }
     await sleep(100);
   }
-  throw new Error(`timed out waiting for ${file}`);
+  throw new Error(
+    until && text
+      ? `timed out waiting for ${file} to match ${until}; it has ${JSON.stringify(text)}`
+      : `timed out waiting for ${file}`,
+  );
 }
 
 export async function pressEnter(page: Cdp): Promise<void> {

@@ -500,7 +500,10 @@ exec sleep 600
     );
     await page.eval(`${homeRow(ws.gate?.id as string)}.querySelector('[data-answer]').click()`);
     // Typed as a paste, as the header's answer button does.
-    assert.match(await waitForFile(path.join(fx.root, `input-${ws.gate?.id}.txt`)), /approved/);
+    assert.match(
+      await waitForFile(path.join(fx.root, `input-${ws.gate?.id}.txt`), { until: /approved/ }),
+      /approved/,
+    );
     // Commit…: the workspace with the Changes panel and its commit box in focus.
     await home();
     await page.eval(
