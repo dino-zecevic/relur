@@ -12,7 +12,7 @@
 [![MIT license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-lightgrey)
 
-<img src="docs/images/demo.gif" width="1100" alt="Relur at work: Claude's output streams into a workspace; ⌘N creates a workspace for ABC-160 and Claude starts in its worktree; another workspace asks for permission and the Work tab's badge counts it; ⌘J jumps there, the permission is given and it works again; it turns Done and ⇧⌘D shows its diff">
+<img src="docs/images/demo.gif" width="1100" alt="Relur at work: Home's Board with its columns Working, Idle, Needs you, Ready to ship and Merged; a working card opens and Claude's output streams in; ⌘N creates a workspace for ABC-160 and its card is in Working; another card moves by itself to Needs you, is answered from its quick reply and goes back to Working; Commit… on a card in Ready to ship opens the Changes panel with its diff">
 
 </div>
 
